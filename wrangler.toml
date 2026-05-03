@@ -1,5 +1,5 @@
 name = "cryonova"
-main = "cryonova-worker.js"
+main = "worker.js"
 compatibility_date = "2025-01-01"
 
 # KV namespace binding — замени id на свой!
