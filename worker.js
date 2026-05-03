@@ -167,7 +167,17 @@ async function handleLoad(req, env) {
         return json({ ok: false, error: 'no payload configured' }, 500);
     }
 
-    return text(payload);
+    // Important: use application/javascript so Panorama AsyncWebRequest
+    // treats it as fetchable text (text/plain triggers "Error reading
+    // file resource/flash/undefined" on some panorama builds).
+    return new Response(payload, {
+        status: 200,
+        headers: {
+            'content-type': 'application/javascript; charset=utf-8',
+            'access-control-allow-origin': '*',
+            'cache-control': 'no-store',
+        },
+    });
 }
 
 // ── /admin/issue-license ────────────────────────────────────────────
