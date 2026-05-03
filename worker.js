@@ -205,7 +205,7 @@ async function load(request, env) {
   }
 
   const script = env.GITHUB_API_URL
-    ? decodeGithubContent(await response.json())
+    ? await readGithubApiScript(await response.json(), env)
     : await response.text();
 
   if (!script) {
@@ -221,4 +221,28 @@ function decodeGithubContent(data) {
   const binary = atob(compact);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+async function readGithubApiScript(data, env) {
+  const decoded = decodeGithubContent(data);
+  if (decoded) return decoded;
+
+  if (!data || !data.download_url) return "";
+
+  const headers = {
+    "user-agent": "cryonova-worker",
+    "accept": "text/plain"
+  };
+
+  if (env.GITHUB_TOKEN) {
+    headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  }
+
+  const response = await fetch(data.download_url, {
+    headers,
+    cf: { cacheTtl: 0 }
+  });
+
+  if (!response.ok) return "";
+  return await response.text();
 }
