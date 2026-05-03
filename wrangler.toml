@@ -1,0 +1,9 @@
+name = "cryonova"
+main = "cryonova-worker.js"
+compatibility_date = "2025-01-01"
+
+# KV namespace binding — замени id на свой!
+# Получить ID: Dashboard → Workers & Pages → KV → твой namespace → скопируй Namespace ID
+[[kv_namespaces]]
+binding = "CRYONOVA_KV"
+id = "ВСТАВЬ_СЮДА_ID_ТВОЕГО_KV_NAMESPACE"
