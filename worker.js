@@ -191,7 +191,7 @@ async function load(request, env) {
   const headers = {
     "user-agent": "cryonova-worker",
     "accept": env.GITHUB_API_URL
-      ? "application/vnd.github+json"
+      ? "application/vnd.github.raw"
       : "text/plain"
   };
 
@@ -204,12 +204,14 @@ async function load(request, env) {
     return json({ ok: false, error: "script fetch failed" }, 502);
   }
 
-  const script = env.GITHUB_API_URL
-    ? await readGithubApiScript(await response.json(), env)
-    : await response.text();
+  const script = await response.text();
 
-  if (!script) {
+  if (!script || script.trim() === "") {
     return json({ ok: false, error: "empty script" }, 502);
+  }
+
+  if (script.trim().startsWith("{") && script.includes('"message"')) {
+    return json({ ok: false, error: "github returned json instead of lua" }, 502);
   }
 
   return text(script);
