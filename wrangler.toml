@@ -6,4 +6,4 @@ compatibility_date = "2025-01-01"
 # Получить ID: Dashboard → Workers & Pages → KV → твой namespace → скопируй Namespace ID
 [[kv_namespaces]]
 binding = "CRYONOVA_KV"
-id = "ВСТАВЬ_СЮДА_ID_ТВОЕГО_KV_NAMESPACE"
+id = "a00055db53614f09a51c232f13ce5d5d"
