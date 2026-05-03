@@ -17,68 +17,6 @@ local weapons = require('gamesense/csgo_weapons')
 lua.entity = require('gamesense/entity')
 --#endregion
 
---#region notifications
-local notify = { bottom = {} }
-
-notify.new_bottom = function(r, g, b, parts)
-    notify.bottom[#notify.bottom + 1] = {
-        started = globals.realtime(),
-        expires = globals.realtime() + 5,
-        alpha = 0,
-        y = nil,
-        r = r,
-        g = g,
-        b = b,
-        parts = parts
-    }
-end
-
-local function notify_lerp(from, to, amount)
-    return from + (to - from) * amount
-end
-
-local function notify_text(parts, alpha, accent_r, accent_g, accent_b)
-    local out = ''
-    for i = 1, #parts do
-        local part = parts[i]
-        local text = tostring(part[1] or '')
-        local accent = part[2]
-        local r, g, b = 255, 255, 255
-        if accent then
-            r, g, b = accent_r, accent_g, accent_b
-        end
-        out = out .. string.format('\a%02x%02x%02x%02x%s', r, g, b, alpha, text)
-    end
-    return out
-end
-
-client.set_event_callback('paint_ui', function()
-    local screen_w, screen_h = client.screen_size()
-    local now = globals.realtime()
-    local ft = globals.frametime()
-    for i = #notify.bottom, 1, -1 do
-        local item = notify.bottom[i]
-        local active = now < item.expires
-        item.alpha = notify_lerp(item.alpha, active and 255 or 0, active and ft * 9 or ft * 18)
-        if item.alpha <= 1 and not active then
-            table.remove(notify.bottom, i)
-        else
-            local text = notify_text(item.parts, math.floor(item.alpha), item.r, item.g, item.b)
-            local width = renderer.measure_text('', text) + 34
-            local height = 24
-            local target_y = screen_h - 140 - (#notify.bottom - i) * 34
-            item.y = notify_lerp(item.y or screen_h, target_y, ft * 8)
-            local x = screen_w * 0.5 - width * 0.5
-            local y = item.y
-            renderer.rectangle(x + 4, y + 4, width, height, 0, 0, 0, item.alpha * 0.18)
-            renderer.rectangle(x, y, width, height, 18, 18, 18, item.alpha * 0.88)
-            renderer.rectangle(x, y, 2, height, item.r, item.g, item.b, item.alpha)
-            renderer.text(x + 9, y + 6, item.r, item.g, item.b, item.alpha, '', 0, '*')
-            renderer.text(x + 22, y + 6, 255, 255, 255, item.alpha, '', 0, text)
-        end
-    end
-end)
---#endregion
 --#region drag
 local draggable = {}
 draggable.__index = draggable
@@ -659,6 +597,20 @@ lua.pui = {} do
         tab = lua.pui.ui.group.main:combobox('\n ~ Navigation', {lua.pui.tabs.welcome, lua.pui.tabs.builder, lua.pui.tabs.features, lua.pui.tabs.world, lua.pui.tabs.rage})
     }
 
+    lua.pui.update_title = function ()
+        local theme = lua.visuals and lua.visuals.theme and lua.visuals.theme() or {primary = {231, 251, 255, 255}, accent = {143, 207, 250, 255}}
+        local p, a = theme.primary, theme.accent
+        local title = table.concat(mathematic.animate_text(globals.curtime() * 1.2, 'cryonova ~ build(nightly)', p[1], p[2], p[3], p[4] or 255, a[1], a[2], a[3], a[4] or 255))
+        pcall(function () lua.pui.ui.search.title:set(title) end)
+
+        if lua.rage and lua.rage.resolver and lua.rage.resolver.debug_text then
+            pcall(function () lua.pui.ui.rage.resolver_debug_label:set(lua.rage.resolver.debug_text()) end)
+        end
+        if lua.rage and lua.rage.logs and lua.rage.logs.stats_text then
+            pcall(function () lua.pui.ui.rage.shot_stats_label:set(lua.rage.logs.stats_text()) end)
+        end
+    end
+
     local welcome_username = 'your_username'
     pcall(function ()
         if panorama and panorama.open then
@@ -671,7 +623,12 @@ lua.pui = {} do
 
     lua.pui.ui.welcome = {
         user = ui.new_label('aa', 'anti-aimbot angles', '\aE7FBFFFF* \aC8EEF6FFUser: \aFFFFFFFF' .. welcome_username),
-        version = ui.new_label('aa', 'anti-aimbot angles', '\aE7FBFFFF* \aC8EEF6FFVersion: \aFFFFFFFFNightly [debug]'),
+        version = ui.new_label('aa', 'anti-aimbot angles', '\aE7FBFFFF* \aC8EEF6FFVersion: \aFFFFFFF CRYONOVA [Nightly]'),
+        build_hint = ui.new_label('aa', 'fake lag', '\aA9DCEBFFcryonova \aE7FBFFFF~ \a8FCFFAFFoptimized menu'),
+        profile_badge = ui.new_label('aa', 'fake lag', '\aC8EEF6FFprivate build \aE7FBFFFF/ \a8FCFFAFFnightly channel'),
+        theme_hint = ui.new_label('aa', 'fake lag', '\aA9DCEBFFTheme presets control UI accent colors'),
+        config_hint = ui.new_label('aa', 'other', '\aC8EEF6FFConfigs are stored locally'),
+        config_hint2 = ui.new_label('aa', 'other', '\aA9DCEBFFUse the list on the left to load/save presets'),
         spacer = ui.new_label('aa', 'anti-aimbot angles', ' '),
         configs_label = ui.new_label('aa', 'anti-aimbot angles', '\aA9DCEBFF~ Your configs ~'),
         list = ui.new_listbox('aa', 'anti-aimbot angles', '\n ~ Cryonova configs', {'Default'}),
@@ -685,6 +642,11 @@ lua.pui = {} do
     lua.pui.ui.welcome_refs = {
         lua.pui.ui.welcome.user,
         lua.pui.ui.welcome.version,
+        lua.pui.ui.welcome.build_hint,
+        lua.pui.ui.welcome.profile_badge,
+        lua.pui.ui.welcome.theme_hint,
+        lua.pui.ui.welcome.config_hint,
+        lua.pui.ui.welcome.config_hint2,
         lua.pui.ui.welcome.spacer,
         lua.pui.ui.welcome.configs_label,
         lua.pui.ui.welcome.list,
@@ -700,22 +662,27 @@ lua.pui = {} do
     end
 
     lua.pui.ui.rage = {
-        tweaks_label = lua.pui.ui.group.main:label('\f<color_start> ~ ' .. '\f<color_tabs> Tweaks'),
+        tweaks_label = lua.pui.ui.group.main:label('\f<color_start> ~ ' .. '\f<color_tabs> Combat'),
+        resolver_debug_label = lua.pui.ui.group.main:label('\f<color_ref> resolver target: none'),
         resolver = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_sad> {alpha} ' .. '\f<color_tabs> Resolver'),
         resolver_mode = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_ref> Resolver ' .. '\f<color_start> / ' .. '\f<color_tabs> Mode', {'Default', 'Experimental'}),
         defensive_aa_resolver = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Defensive anti-aim resolver'),
         backtrack_exploit = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Backtrack exploit'),
+        backtrack_warning = lua.pui.ui.group.main:label('\f<color_sad> warning: experimental, may conflict with server data'),
         dt_last_tick = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Doubletap on last tick'),
         safety_label = lua.pui.ui.group.main:label('\f<color_start> ~ ' .. '\f<color_tabs> Safety'),
         force_body = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Force body aim on lethal'),
-        other_label = lua.pui.ui.group.main:label('\f<color_start> ~ ' .. '\f<color_tabs> Other'),
-        shot_logs = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Aimbot logs'),
-        shot_logs_col = lua.pui.ui.group.main:color_picker('\n ~ Aimbot logs notify color', 255, 226, 243, 255),
-        peekbot = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Peek bot'),
-        peekbot_bind = lua.pui.ui.group.main:hotkey('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Bind', false, 0),
-        peekbot_distance = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Tracing distance', 30, 100, 60),
-        peekbot_freestanding = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Freestanding'),
-        peekbot_visualize = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Renderer trace positions')
+        other_label = lua.pui.ui.group.fake:label('\f<color_start> ~ ' .. '\f<color_tabs> Logging'),
+        peekbot_label = lua.pui.ui.group.other:label('\f<color_start> ~ ' .. '\f<color_tabs> Peek bot'),
+        shot_logs = lua.pui.ui.group.fake:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Aimbot logs'),
+        shot_logs_filter = lua.pui.ui.group.fake:multiselect('\f<color_start> ~ ' .. '\f<color_ref> Logs ' .. '\f<color_start> / ' .. '\f<color_tabs> Filter', {'Hits', 'Misses', 'Other'}),
+        shot_logs_col = lua.pui.ui.group.fake:color_picker('\n ~ Aimbot logs notify color', 255, 226, 243, 255),
+        shot_stats_label = lua.pui.ui.group.fake:label('\f<color_ref> shots: 0 | hits: 0 | misses: 0 | avg hc: 0%'),
+        peekbot = lua.pui.ui.group.other:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Enable'),
+        peekbot_bind = lua.pui.ui.group.other:hotkey('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Bind', false, 0),
+        peekbot_distance = lua.pui.ui.group.other:slider('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Tracing distance', 30, 100, 60),
+        peekbot_freestanding = lua.pui.ui.group.other:checkbox('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Freestanding'),
+        peekbot_visualize = lua.pui.ui.group.other:checkbox('\f<color_start> ~ ' .. '\f<color_ref> Peek bot ' .. '\f<color_start> / ' .. '\f<color_tabs> Trace positions')
     }
 
     lua.pui.ui.antiaim = {
@@ -770,7 +737,7 @@ lua.pui = {} do
     }
 
     lua.pui.ui.animations = {
-        animations_select = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Animations', {'Aerobic', 'Ground', 'Lean', 'Additive'}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}),
+        animations_select = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Animation layers', {'Aerobic', 'Ground', 'Lean', 'Additive'}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}),
         aerobic = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_ref> Animations ' .. '\f<color_start> / ' .. '\f<color_tabs> Aerobic', {'Quadrobic', 'Static', 'Jitter', 'Trap', 'Swag', 'Walking'}),
         ground = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_ref> Animations ' .. '\f<color_start> / ' .. '\f<color_tabs> Ground', {'Static', 'Static invert', 'Jitter', 'Trap', 'Swag', 'Freeze', 'Freeze & Static', 'Freeze & Static invert', 'Bugged'}),
         lean = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_ref> Animations ' .. '\f<color_start> / ' .. '\f<color_tabs> Lean', {'Zero', 'Big', 'Jitter'}),
@@ -778,19 +745,24 @@ lua.pui = {} do
     }
 
     lua.pui.ui.render = {
-        panels_select = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Widgets', {'Indicator', 'Obscuration', 'Damage', 'Hitmarker', 'Lag comp box', 'Watermark', 'Grenade visuals', 'Menu visuals', 'Reload indicator', 'Bomb timer'--[[, 'Binds']]}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}),
+        panels_select = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Widgets', {'Indicator', 'Obscuration', 'Damage', 'Hitmarker', 'Lag comp box', 'Watermark', 'Grenade visuals', 'Menu visuals', 'Reload indicator', 'Bomb timer'}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}),
         indicator_style = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_tabs> Indicator style', {'Mode v1', 'Mode v2'}),
         indicatorcol = lua.pui.ui.group.main:color_picker('\n ~ Indicator color', 155, 155, 155, 255),
         indicatorcol2 = lua.pui.ui.group.main:color_picker('\n ~ Indicator color 2', 100, 100, 255, 255),
-        watermark_mode = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_ref> Watermark ' .. '\f<color_start> / ' .. '\f<color_tabs> Mode', {'Mode 1', 'Mode 2'}),
-        watermark_items = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_ref> Watermark ' .. '\f<color_start> / ' .. '\f<color_tabs> Items', {'Logo', 'KD Ratio', 'Speed', 'Framerate', 'Latency', 'Var', 'Loss', 'Connectivity Issues', 'Server Address', 'Preset', 'Username', 'Time'}),
-        reload_indicator_color = lua.pui.ui.group.main:color_picker('\n ~ Reload indicator color', 120, 185, 255, 235),
-        lagcomp_box_color = lua.pui.ui.group.main:color_picker('\n ~ Lag comp box color', 47, 117, 221, 255),
-        lagcomp_text_color = lua.pui.ui.group.main:color_picker('\n ~ Lag comp text color', 255, 45, 45, 255),
-        visual_tuning_label = lua.pui.ui.group.main:label('\f<color_start> ~ ' .. '\f<color_tabs> Visual tuning'),
-        ui_scale = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_ref> UI ' .. '\f<color_start> / ' .. '\f<color_tabs> Visual scale', 60, 160, 100, true, '%'),
-        ui_animation_speed = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_ref> UI ' .. '\f<color_start> / ' .. '\f<color_tabs> Animation speed', 25, 250, 100, true, '%'),
+        watermark_mode = lua.pui.ui.group.fake:combobox('\f<color_start> ~ ' .. '\f<color_ref> Watermark ' .. '\f<color_start> / ' .. '\f<color_tabs> Mode', {'Mode 1', 'Mode 2', 'Mode 3'}),
+        watermark_items = lua.pui.ui.group.fake:multiselect('\f<color_start> ~ ' .. '\f<color_ref> Watermark ' .. '\f<color_start> / ' .. '\f<color_tabs> Items', {'Logo', 'KD Ratio', 'Speed', 'Framerate', 'Latency', 'Var', 'Loss', 'Connectivity Issues', 'Server Address', 'Preset', 'Username', 'Time'}),
+        reload_indicator_color = lua.pui.ui.group.fake:color_picker('\n ~ Reload indicator color', 120, 185, 255, 235),
+        lagcomp_box_color = lua.pui.ui.group.fake:color_picker('\n ~ Lag comp box color', 47, 117, 221, 255),
+        lagcomp_text_color = lua.pui.ui.group.fake:color_picker('\n ~ Lag comp text color', 255, 45, 45, 255),
+        visual_tuning_label = lua.pui.ui.group.fake:label('\f<color_start> ~ ' .. '\f<color_tabs> Visual tuning'),
+        theme_preset = lua.pui.ui.group.fake:combobox('\f<color_start> ~ ' .. '\f<color_ref> Menu ' .. '\f<color_start> / ' .. '\f<color_tabs> Theme preset', {'Ice', 'Dark', 'Neon', 'Minimal'}),
+        visual_preset = lua.pui.ui.group.fake:combobox('\f<color_start> ~ ' .. '\f<color_ref> Visuals ' .. '\f<color_start> / ' .. '\f<color_tabs> Preset', {'Custom', 'Clean', 'Info', 'Full'}),
+        color_sync = lua.pui.ui.group.fake:button('\f<color_tabs>Apply theme to visual colors', function () if lua.visuals and lua.visuals.sync_theme then lua.visuals.sync_theme() end end),
+        hud_preview = lua.pui.ui.group.fake:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> HUD editor preview'),
+        ui_scale = lua.pui.ui.group.fake:slider('\f<color_start> ~ ' .. '\f<color_ref> UI ' .. '\f<color_start> / ' .. '\f<color_tabs> Visual scale', 60, 160, 100, true, '%'),
+        ui_animation_speed = lua.pui.ui.group.fake:slider('\f<color_start> ~ ' .. '\f<color_ref> UI ' .. '\f<color_start> / ' .. '\f<color_tabs> Animation speed', 25, 250, 100, true, '%'),
         grenade_visuals_label = lua.pui.ui.group.main:label('\f<color_start> ~ ' .. '\f<color_tabs> Grenade visuals'),
+        grenade_style = lua.pui.ui.group.main:combobox('\f<color_start> ~ ' .. '\f<color_ref> Grenades ' .. '\f<color_start> / ' .. '\f<color_tabs> Style', {'Classic', 'Soft glow', 'Minimal text'}),
         grenade_timer = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_ref> Grenades ' .. '\f<color_start> / ' .. '\f<color_tabs> Text timer'),
         smoke_timer_color = lua.pui.ui.group.main:color_picker('\n ~ Smoke timer color', 145, 190, 255, 255),
         molotov_timer_color = lua.pui.ui.group.main:color_picker('\n ~ Molotov timer color', 255, 150, 70, 255),
@@ -803,6 +775,7 @@ lua.pui = {} do
         cursor_trail_color = lua.pui.ui.group.main:color_picker('\n ~ Cursor trail color', 190, 90, 255, 210),
     }
     lua.pui.ui.render.animated_intro:set(true)
+    pcall(function () lua.pui.ui.rage.shot_logs_filter:set('Hits', 'Misses', 'Other') end)
     lua.pui.ui.aspectratio_info = {[177] = '16:9',[161] = '16:10',[150] = '3:2',[133] = '4:3',[125] = '5:4'}
     lua.pui.ui.world = {
         world_manager = lua.pui.ui.group.other:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Selection \n world', {'Local Sharing', 'Viewmodel', 'View changer'}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}),
@@ -826,20 +799,22 @@ lua.pui = {} do
     }
 
     lua.pui.ui.additive = {
-        other = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Selection \n Additive', {'Sounds', 'Razpeek', 'Fast Ladder', 'Force Update', 'Clantag', 'Console filter', 'Yandex Music', 'Avoid backstab'}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}),
+        quick_label = lua.pui.ui.group.fake:label('\f<color_start> ~ ' .. '\f<color_tabs> Quick toggles'),
+        other = lua.pui.ui.group.main:multiselect('\f<color_start> ~ ' .. '\f<color_tabs> Quick toggles', {'Sounds', 'Razpeek', 'Fast Ladder', 'Force Update', 'Clantag', 'Console filter', 'Yandex Music', 'Avoid backstab'}):depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}),
         force_update = lua.pui.ui.group.main:button('\f<color_tabs>Force update', function() return client.request_full_update(), client.reload_active_scripts() end),
         sounds_check = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Hitsound'),
         sounds_list = lua.pui.ui.group.main:combobox('\n \f<color_start> ~ ' .. '\f<color_tabs> Hitsound', lua.sounds.sound_names),
-        yandex_x = lua.pui.ui.group.main:slider('\n \f<color_start> ~ ' .. '\f<color_tabs> Yandex HUD x', 0, 1920, 30, true, 'px'),
-        yandex_y = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_tabs> Yandex HUD y', 0, 1080, 300, true, 'px'),
-        yandex_w = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_tabs> Yandex HUD width', 320, 760, 430, true, 'px'),
-        yandex_update = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_tabs> Yandex HUD update', 1, 10, 2, true, 's'),
-        yandex_cover = lua.pui.ui.group.main:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Yandex HUD cover'),
-        yandex_accent = lua.pui.ui.group.main:color_picker('\n ~ Yandex left bar color', 255, 200, 0, 255),
-        yandex_alpha = lua.pui.ui.group.main:slider('\f<color_start> ~ ' .. '\f<color_tabs> Yandex HUD alpha', 0, 255, 255),
-        yandex_prev = lua.pui.ui.group.main:button('\f<color_tabs>Yandex previous', function() lua.yandex.send_command('previous') end),
-        yandex_play = lua.pui.ui.group.main:button('\f<color_tabs>Yandex play / pause', function() lua.yandex.send_command('playpause') end),
-        yandex_next = lua.pui.ui.group.main:button('\f<color_tabs>Yandex next', function() lua.yandex.send_command('next') end)
+        yandex_label = lua.pui.ui.group.other:label('\f<color_start> ~ ' .. '\f<color_tabs> Yandex Music'),
+        yandex_x = lua.pui.ui.group.other:slider('\n \f<color_start> ~ ' .. '\f<color_tabs> HUD x', 0, 1920, 30, true, 'px'),
+        yandex_y = lua.pui.ui.group.other:slider('\f<color_start> ~ ' .. '\f<color_tabs> HUD y', 0, 1080, 300, true, 'px'),
+        yandex_w = lua.pui.ui.group.other:slider('\f<color_start> ~ ' .. '\f<color_tabs> HUD width', 320, 760, 430, true, 'px'),
+        yandex_update = lua.pui.ui.group.other:slider('\f<color_start> ~ ' .. '\f<color_tabs> Update rate', 1, 10, 2, true, 's'),
+        yandex_cover = lua.pui.ui.group.other:checkbox('\f<color_start> ~ ' .. '\f<color_tabs> Show cover'),
+        yandex_accent = lua.pui.ui.group.other:color_picker('\n ~ Yandex accent color', 255, 200, 0, 255),
+        yandex_alpha = lua.pui.ui.group.other:slider('\f<color_start> ~ ' .. '\f<color_tabs> HUD alpha', 0, 255, 255),
+        yandex_prev = lua.pui.ui.group.other:button('\f<color_tabs>Previous', function() lua.yandex.send_command('previous') end),
+        yandex_play = lua.pui.ui.group.other:button('\f<color_tabs>Play / pause', function() lua.yandex.send_command('playpause') end),
+        yandex_next = lua.pui.ui.group.other:button('\f<color_tabs>Next', function() lua.yandex.send_command('next') end)
     }
 
     local config = {lua.pui.ui.conditions, lua.pui.ui.animations, lua.pui.ui.render, lua.pui.ui.world, lua.pui.ui.additive, lua.pui.ui.rage}
@@ -849,9 +824,6 @@ lua.pui = {} do
         data = package:save()
         encrypted = base64.encode(json.stringify(data))
         clipboard.set(encrypted)
-        if lua.notifications and lua.notifications.event_enabled('config') then
-            lua.notifications.push('success', 'Config', 'Exported to clipboard')
-        end
     end
 
     lua.pui.ui.import = function (input)
@@ -859,30 +831,14 @@ lua.pui = {} do
             decrypted = json.parse(base64.decode(input ~= nil and input or clipboard.get()))
             package:load(decrypted)
         end)
-        if lua.notifications and lua.notifications.event_enabled('config') then
-            if ok then
-                lua.notifications.push('success', 'Config', 'Config loaded')
-            else
-                lua.notifications.push('error', 'Config error', tostring(err):gsub('\\n', ' '):sub(1, 90))
-            end
-        end
         if not ok then client.color_log(255, 100, 100, '[cryonova] config import failed: ', tostring(err)) end
     end
-
-    local cfg_beta = 'W3siQ3JvdWNoIjp7ImxieV95YXciOjEsImxieSI6IlJhbmRvbSBUaWNrcyIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6LTg5LCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJGbGljayIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOnRydWUsInlhd19kZWZlbnNpdmVfcyI6NjUsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjIwLCJ5YXdkX2RlZmVuc2l2ZV9zIjo5MCwieWF3X2RlZmVuc2l2ZSI6WyJDZW50ZXIiLCJSYW5kb20iLCJTcGluIiwifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJDZW50ZXIiLCJSYW5kb20iLCJ+Il19LCJQdXNoIjp7ImxieV95YXciOjEsImxieSI6IlJhbmRvbSBUaWNrcyIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6LTIyLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPbiBQZWVrIiwib3ZlcnJpZGUiOnRydWUsImRlZmVuc2l2ZV9hYV9vbiI6dHJ1ZSwieWF3X2RlZmVuc2l2ZV9zIjoyNSwidGljayI6MSwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MjUsInlhd2RfZGVmZW5zaXZlX3MiOjEwMCwieWF3X2RlZmVuc2l2ZSI6WyJSYW5kb20iLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIkNlbnRlciIsIlJhbmRvbSIsIn4iXX0sIk1hbnVhbCBGb3J3YXJkIjp7ImxieV95YXciOjEsImxieSI6Ik9mZiIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjAsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT2ZmIiwib3ZlcnJpZGUiOmZhbHNlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6MTgwLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIkFlcm9iaWMrIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjotODksInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6IkZsaWNrIiwib3ZlcnJpZGUiOnRydWUsImRlZmVuc2l2ZV9hYV9vbiI6dHJ1ZSwieWF3X2RlZmVuc2l2ZV9zIjoxNTAsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjMwLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIkNlbnRlciIsIlJhbmRvbSIsIlNwaW4iLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIkNlbnRlciIsIn4iXX0sIkNyYXdsaW5nIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjgsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOnRydWUsInlhd19sIjotMTQsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiRmxpY2siLCJvdmVycmlkZSI6dHJ1ZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjo1LCJ5YXciOjAsInlhd19tdWx0aV9zIjoyNywieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIlJhbmRvbSIsIn4iXX0sIkZyZWVzdGFuZCI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjpmYWxzZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsifiJdfSwiTnVtYiI6eyJsYnlfeWF3IjoxLCJsYnkiOiJSYW5kb20gVGlja3MiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjE4LCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsiT2Zmc2V0IiwiQ2VudGVyIiwiUmFuZG9tIiwifiJdfSwiTWFudWFsIEJhY2siOnsibGJ5X3lhdyI6MSwibGJ5IjoiT2ZmIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPZmYiLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MSwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIk1hbnVhbCBMZWZ0Ijp7ImxieV95YXciOjEsImxieSI6Ik9mZiIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjAsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT2ZmIiwib3ZlcnJpZGUiOmZhbHNlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6LTkwLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIk1hbnVhbCBSaWdodCI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjpmYWxzZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjkwLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sItChcmVlcGluZyI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjpmYWxzZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsifiJdfSwiUmVndWxhciI6eyJsYnlfeWF3Ijo2MCwibGJ5IjoiU3RhdGljIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjo4OSwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjAsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiRmxpY2siLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6dHJ1ZSwieWF3X2RlZmVuc2l2ZV9zIjo5MCwidGljayI6MSwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJDZW50ZXIiLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIkFlcm9iaWMiOnsibGJ5X3lhdyI6NjAsImxieSI6IlRpY2tzIiwieWF3X3IiOi0xOSwicGl0Y2hfZGVmZW5zaXZlX3MiOi00NSwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjE5LCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6IkFsd2F5cyIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOnRydWUsInlhd19kZWZlbnNpdmVfcyI6NzAsInRpY2siOjIsInlhdyI6MCwieWF3X211bHRpX3MiOjM2LCJ5YXdkX2RlZmVuc2l2ZV9zIjo0NSwieWF3X2RlZmVuc2l2ZSI6WyJTcGluIiwifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJSYW5kb20iLCJ+Il19fSx7ImFlcm9iaWMiOiJUcmFwIiwiYW5pbWF0aW9uc19zZWxlY3QiOlsiQWVyb2JpYyIsIkdyb3VuZCIsIkxlYW4iLCJBZGRpdGl2ZSIsIn4iXSwibGVhbiI6IkppdHRlciIsIm90aGVyIjpbIkF1dG9wZWVrIGZpeCIsIkFuaW1hdGlvbiBzbW9vdGgiLCJ+Il0sImdyb3VuZCI6IlN3YWcifSx7ImluZGljYXRvcmNvbDIiOiIjNjQ2NEZGRkYiLCJpbmRpY2F0b3IiOlsiU2NvcGUiLCJHcmVuYWRlIiwifiJdLCJncmFwaCI6ZmFsc2UsImluZGljYXRvcmNvbCI6IiNGRkZGRkZGRiIsImdyYXBoX2MiOiIjNzhBMDUwRkYiLCJwYW5lbHNfc2VsZWN0IjpbIkluZGljYXRvciIsIn4iXX0seyJoYW5kZHJhZ192IjpmYWxzZSwidGhpcmRwZXJzb24iOjY5LCJjdXN0b21fc2NvcGVfcG9zaXRpb24iOjkwLCJmbGFzaGxpZ2h0IjpmYWxzZSwidmlld2RyYWdfdiI6ZmFsc2UsImN1c3RvbV9zY29wZV9mYWRlIjoxMiwiY3VzdG9tX3Njb3BlX29mZnNldCI6Mywiem9vbV9zY2FsZSI6ZmFsc2UsInRoaXJkcGVyc29uX2FuaW0iOmZhbHNlLCJtZV9zaGFyaW5nX3YiOmZhbHNlLCJoYW5kX3oiOi0xLCJoYW5kX3giOjEsImN1c3RvbV9zY29wZSI6ZmFsc2UsIndvcmxkX21hbmFnZXIiOlsifiJdLCJhc3BlY3RyYXRpbyI6MCwiZmxhc2hsaWdodF92IjpmYWxzZSwiaGFuZF9mb3YiOjU2LCJoYW5kc19kcmFnIjpmYWxzZSwiY3VzdG9tX3Njb3BlX2MiOiIjOUI5QjlCRkYiLCJtZV9zaGFyaW5nY29sIjoiI0ZGMDAwMEZGIiwiaGFuZF95IjotNCwibWVfc2hhcmluZyI6IlN0YXRpYyIsInpvb21fb2Zmc2V0IjowfSx7InNvdW5kc19saXN0IjoiU3dpdGNoIDNEIiwic291bmRzX2NoZWNrIjpmYWxzZSwib3RoZXIiOlsifiJdfV0='
-    local cfg_agr = 'W3siQ3JvdWNoIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjUwLCJwaXRjaF9kZWZlbnNpdmVfcyI6LTg5LCJ5YXdfbHIiOnRydWUsInlhd19sIjotMzIsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiRmxpY2siLCJvdmVycmlkZSI6dHJ1ZSwiZGVmZW5zaXZlX2FhX29uIjp0cnVlLCJ5YXdfZGVmZW5zaXZlX3MiOjgxLCJ0aWNrIjoyLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjozNywieWF3X2RlZmVuc2l2ZSI6WyJDZW50ZXIiLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIlB1c2giOnsibGJ5X3lhdyI6MSwibGJ5IjoiVGlja3MiLCJ5YXdfciI6MzcsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOnRydWUsInlhd19sIjotMzIsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT24gUGVlayIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjIsInlhdyI6MCwieWF3X211bHRpX3MiOjAsInlhd2RfZGVmZW5zaXZlX3MiOjAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJNYW51YWwgRm9yd2FyZCI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjpmYWxzZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsifiJdfSwiQWVyb2JpYysiOnsibGJ5X3lhdyI6MSwibGJ5IjoiVGlja3MiLCJ5YXdfciI6NDcsInBpdGNoX2RlZmVuc2l2ZV9zIjotNTksInlhd19sciI6dHJ1ZSwieWF3X2wiOi0zNSwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJBbHdheXMiLCJvdmVycmlkZSI6dHJ1ZSwiZGVmZW5zaXZlX2FhX29uIjp0cnVlLCJ5YXdfZGVmZW5zaXZlX3MiOjEwNiwidGljayI6MywieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJSYW5kb20iLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIkNyYXdsaW5nIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjotNDcsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9uIFBlZWsiLCJvdmVycmlkZSI6dHJ1ZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjoxODAsInRpY2siOjEsInlhdyI6LTMsInlhd19tdWx0aV9zIjoxMCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJSYW5kb20iLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIkNlbnRlciIsIn4iXX0sIkZyZWVzdGFuZCI6eyJsYnlfeWF3IjowLCJsYnkiOiJTdGF0aWMiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjAsImRlZmVuc2l2ZSI6Ik9uIFBlZWsiLCJvdmVycmlkZSI6dHJ1ZSwiZGVmZW5zaXZlX2FhX29uIjp0cnVlLCJ5YXdfZGVmZW5zaXZlX3MiOjM1LCJ0aWNrIjoxLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjoxMDAsInlhd19kZWZlbnNpdmUiOlsiUmFuZG9tIiwifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJOdW1iIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjM5LCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjp0cnVlLCJ5YXdfbCI6LTIxLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjIsInlhdyI6MCwieWF3X211bHRpX3MiOjAsInlhd2RfZGVmZW5zaXZlX3MiOjAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJNYW51YWwgQmFjayI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjpmYWxzZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsifiJdfSwiTWFudWFsIExlZnQiOnsibGJ5X3lhdyI6NjAsImxieSI6IlN0YXRpYyIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjAsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT24gUGVlayIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOnRydWUsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MSwieWF3IjotOTAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjo5MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIk1hbnVhbCBSaWdodCI6eyJsYnlfeWF3Ijo2MCwibGJ5IjoiU3RhdGljIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPbiBQZWVrIiwib3ZlcnJpZGUiOnRydWUsImRlZmVuc2l2ZV9hYV9vbiI6dHJ1ZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjkwLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6OTAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCLQoXJlZXBpbmciOnsibGJ5X3lhdyI6MSwibGJ5IjoiT2ZmIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPZmYiLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MSwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIlJlZ3VsYXIiOnsibGJ5X3lhdyI6MCwibGJ5IjoiVGlja3MiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9uIFBlZWsiLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6ODAsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjI1LCJ5YXdkX2RlZmVuc2l2ZV9zIjoxMDAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJBZXJvYmljIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjotODksInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6IkFsd2F5cyIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOnRydWUsInlhd19kZWZlbnNpdmVfcyI6MTIwLCJ0aWNrIjoxLCJ5YXciOjUsInlhd19tdWx0aV9zIjo0MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJDZW50ZXIiLCJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIkNlbnRlciIsIn4iXX19LHsiYWVyb2JpYyI6IlN0YXRpYyIsImFuaW1hdGlvbnNfc2VsZWN0IjpbIkFlcm9iaWMiLCJHcm91bmQiLCJMZWFuIiwiQWRkaXRpdmUiLCJ+Il0sImxlYW4iOiJCaWciLCJvdGhlciI6WyJBdXRvcGVlayBmaXgiLCJBbmltYXRpb24gc21vb3RoIiwifiJdLCJncm91bmQiOiJTdGF0aWMgaW52ZXJ0In0seyJpbmRpY2F0b3Jjb2wyIjoiIzY0NjRGRkZGIiwiaW5kaWNhdG9yIjpbIlNjb3BlIiwiR3JlbmFkZSIsIn4iXSwiZ3JhcGgiOmZhbHNlLCJpbmRpY2F0b3Jjb2wiOiIjRkZGRkZGRkYiLCJncmFwaF9jIjoiIzc4QTA1MEZGIiwicGFuZWxzX3NlbGVjdCI6WyJEYW1hZ2UiLCJIaXRtYXJrZXIiLCJ+Il19LHsiaGFuZGRyYWdfdiI6dHJ1ZSwidGhpcmRwZXJzb24iOjY5LCJjdXN0b21fc2NvcGVfcG9zaXRpb24iOjkwLCJmbGFzaGxpZ2h0IjpmYWxzZSwidmlld2RyYWdfdiI6dHJ1ZSwiY3VzdG9tX3Njb3BlX2ZhZGUiOjEyLCJjdXN0b21fc2NvcGVfb2Zmc2V0Ijo2MCwiem9vbV9zY2FsZSI6ZmFsc2UsInRoaXJkcGVyc29uX2FuaW0iOmZhbHNlLCJtZV9zaGFyaW5nX3YiOmZhbHNlLCJoYW5kX3oiOi0xMzUsImhhbmRfeCI6MCwiY3VzdG9tX3Njb3BlIjp0cnVlLCJ3b3JsZF9tYW5hZ2VyIjpbIkhhbmRzIERyYWdnaW5nIiwiVmlldyBEcmFnZ2luZyIsIn4iXSwiYXNwZWN0cmF0aW8iOjAsImZsYXNobGlnaHRfdiI6ZmFsc2UsImhhbmRfZm92Ijo1OSwiaGFuZHNfZHJhZyI6dHJ1ZSwiY3VzdG9tX3Njb3BlX2MiOiIjOUI5QjlCRkYiLCJtZV9zaGFyaW5nY29sIjoiI0ZGMDAwMEZGIiwiaGFuZF95IjotMjAwLCJtZV9zaGFyaW5nIjoiRHJhZ2dpbmciLCJ6b29tX29mZnNldCI6NH0seyJzb3VuZHNfbGlzdCI6IkltcGFjdCIsInNvdW5kc19jaGVjayI6dHJ1ZSwib3RoZXIiOlsiU291bmRzIiwifiJdfV0='
     local cfg = 'W3siQ3JvdWNoIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjUwLCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjp0cnVlLCJ5YXdfbCI6LTMyLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6IkZsaWNrIiwib3ZlcnJpZGUiOnRydWUsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MiwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIlB1c2giOnsibGJ5X3lhdyI6MSwibGJ5IjoiVGlja3MiLCJ5YXdfciI6MzcsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOnRydWUsInlhd19sIjotMzIsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT24gUGVlayIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjIsInlhdyI6MCwieWF3X211bHRpX3MiOjEwLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsiUmFuZG9tIiwifiJdfSwiTWFudWFsIEZvcndhcmQiOnsibGJ5X3lhdyI6MSwibGJ5IjoiT2ZmIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPZmYiLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MSwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIkFlcm9iaWMrIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjQ3LCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjp0cnVlLCJ5YXdfbCI6LTM1LCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6IkZsaWNrIiwib3ZlcnJpZGUiOnRydWUsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MywieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIkNyYXdsaW5nIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJGbGljayIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6LTMsInlhd19tdWx0aV9zIjoxOSwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIkNlbnRlciIsIn4iXX0sIkZyZWVzdGFuZCI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjp0cnVlLCJkZWZlbnNpdmVfYWFfb24iOnRydWUsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MSwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIk51bWIiOnsibGJ5X3lhdyI6MSwibGJ5IjoiVGlja3MiLCJ5YXdfciI6MzksInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOnRydWUsInlhd19sIjotMjEsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT2ZmIiwib3ZlcnJpZGUiOnRydWUsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MiwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MCwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIn4iXX0sIk1hbnVhbCBCYWNrIjp7ImxieV95YXciOjEsImxieSI6Ik9mZiIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjAsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT2ZmIiwib3ZlcnJpZGUiOmZhbHNlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjAsInlhd2RfZGVmZW5zaXZlX3MiOjAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJNYW51YWwgTGVmdCI6eyJsYnlfeWF3IjoxLCJsYnkiOiJPZmYiLCJ5YXdfciI6MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6ZmFsc2UsInlhd19sIjowLCJkZWZlbnNpdmVfbWludXMiOjMsImRlZmVuc2l2ZSI6Ik9mZiIsIm92ZXJyaWRlIjpmYWxzZSwiZGVmZW5zaXZlX2FhX29uIjp0cnVlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjAsInlhd2RfZGVmZW5zaXZlX3MiOjAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJNYW51YWwgUmlnaHQiOnsibGJ5X3lhdyI6MSwibGJ5IjoiT2ZmIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPZmYiLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6dHJ1ZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjoxLCJ5YXciOjAsInlhd19tdWx0aV9zIjowLCJ5YXdkX2RlZmVuc2l2ZV9zIjowLCJ5YXdfZGVmZW5zaXZlIjpbIn4iXSwiZGVmZW5zaXZlX3BsdXMiOjExLCJ5YXdfbXVsdGkiOlsifiJdfSwi0KFyZWVwaW5nIjp7ImxieV95YXciOjEsImxieSI6Ik9mZiIsInlhd19yIjowLCJwaXRjaF9kZWZlbnNpdmVfcyI6MCwieWF3X2xyIjpmYWxzZSwieWF3X2wiOjAsImRlZmVuc2l2ZV9taW51cyI6MywiZGVmZW5zaXZlIjoiT2ZmIiwib3ZlcnJpZGUiOmZhbHNlLCJkZWZlbnNpdmVfYWFfb24iOmZhbHNlLCJ5YXdfZGVmZW5zaXZlX3MiOjAsInRpY2siOjEsInlhdyI6MCwieWF3X211bHRpX3MiOjAsInlhd2RfZGVmZW5zaXZlX3MiOjAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJSZWd1bGFyIjp7ImxieV95YXciOjEsImxieSI6IlRpY2tzIiwieWF3X3IiOjAsInBpdGNoX2RlZmVuc2l2ZV9zIjowLCJ5YXdfbHIiOmZhbHNlLCJ5YXdfbCI6MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJPZmYiLCJvdmVycmlkZSI6ZmFsc2UsImRlZmVuc2l2ZV9hYV9vbiI6ZmFsc2UsInlhd19kZWZlbnNpdmVfcyI6MCwidGljayI6MiwieWF3IjowLCJ5YXdfbXVsdGlfcyI6MjUsInlhd2RfZGVmZW5zaXZlX3MiOjAsInlhd19kZWZlbnNpdmUiOlsifiJdLCJkZWZlbnNpdmVfcGx1cyI6MTEsInlhd19tdWx0aSI6WyJ+Il19LCJBZXJvYmljIjp7ImxieV95YXciOjYwLCJsYnkiOiJUaWNrcyIsInlhd19yIjo0MCwicGl0Y2hfZGVmZW5zaXZlX3MiOjAsInlhd19sciI6dHJ1ZSwieWF3X2wiOi00MCwiZGVmZW5zaXZlX21pbnVzIjozLCJkZWZlbnNpdmUiOiJBbHdheXMiLCJvdmVycmlkZSI6dHJ1ZSwiZGVmZW5zaXZlX2FhX29uIjpmYWxzZSwieWF3X2RlZmVuc2l2ZV9zIjowLCJ0aWNrIjo4LCJ5YXciOjUsInlhd19tdWx0aV9zIjoxMSwieWF3ZF9kZWZlbnNpdmVfcyI6MCwieWF3X2RlZmVuc2l2ZSI6WyJ+Il0sImRlZmVuc2l2ZV9wbHVzIjoxMSwieWF3X211bHRpIjpbIlJhbmRvbSIsIn4iXX19LHsiYWVyb2JpYyI6IlN0YXRpYyIsImFuaW1hdGlvbnNfc2VsZWN0IjpbIkFlcm9iaWMiLCJMZWFuIiwiQWRkaXRpdmUiLCJ+Il0sImxlYW4iOiJCaWciLCJvdGhlciI6WyJBdXRvcGVlayBmaXgiLCJBbmltYXRpb24gc21vb3RoIiwifiJdLCJncm91bmQiOiJTdGF0aWMifSx7ImluZGljYXRvcmNvbDIiOiIjNjQ2NEZGRkYiLCJpbmRpY2F0b3IiOlsiU2NvcGUiLCJHcmVuYWRlIiwifiJdLCJncmFwaCI6ZmFsc2UsImluZGljYXRvcmNvbCI6IiNGRkZGRkZGRiIsImdyYXBoX2MiOiIjNzhBMDUwRkYiLCJwYW5lbHNfc2VsZWN0IjpbIkluZGljYXRvciIsIkhpdG1hcmtlciIsIkdhbWVzZW5zZSIsIn4iXX0seyJoYW5kZHJhZ192Ijp0cnVlLCJ0aGlyZHBlcnNvbiI6NjksImN1c3RvbV9zY29wZV9wb3NpdGlvbiI6OTAsImZsYXNobGlnaHQiOmZhbHNlLCJ2aWV3ZHJhZ192Ijp0cnVlLCJjdXN0b21fc2NvcGVfZmFkZSI6MTIsImN1c3RvbV9zY29wZV9vZmZzZXQiOjYwLCJ6b29tX3NjYWxlIjp0cnVlLCJ0aGlyZHBlcnNvbl9hbmltIjpmYWxzZSwibWVfc2hhcmluZ192IjpmYWxzZSwiaGFuZF96IjotMTQ4LCJoYW5kX3giOjEwOSwiY3VzdG9tX3Njb3BlIjp0cnVlLCJ3b3JsZF9tYW5hZ2VyIjpbIkhhbmRzIERyYWdnaW5nIiwiVmlldyBEcmFnZ2luZyIsIn4iXSwiYXNwZWN0cmF0aW8iOjE2NSwiZmxhc2hsaWdodF92IjpmYWxzZSwiaGFuZF9mb3YiOjU2LCJoYW5kc19kcmFnIjp0cnVlLCJjdXN0b21fc2NvcGVfYyI6IiNGRkZGRkZGRiIsIm1lX3NoYXJpbmdjb2wiOiIjRkYwMDAwRkYiLCJoYW5kX3kiOi00NzAsIm1lX3NoYXJpbmciOiJEcmFnZ2luZyIsInpvb21fb2Zmc2V0Ijo5fSx7InNvdW5kc19saXN0IjoiSW1wYWN0Iiwic291bmRzX2NoZWNrIjp0cnVlLCJvdGhlciI6WyJTb3VuZHMiLCJGb3JjZSBVcGRhdGUiLCJDbGFudGFnIiwifiJdfV0='
     lua.pui.configs = {
         db_key = 'cryonova_configs',
         names = {'Default'},
         data = {}
     }
-
-    local config_notify = function (kind, title, message)
-        if lua.notifications and lua.notifications.event_enabled('config') then
-            lua.notifications.push(kind, title, message)
-        end
-    end
 
     lua.pui.configs.refresh = function ()
         local names = {'Default'}
@@ -939,8 +895,6 @@ lua.pui = {} do
         local encoded = lua.pui.configs.data[name]
         if encoded then
             lua.pui.ui.import(encoded)
-        else
-            config_notify('error', 'Config', 'Config not found')
         end
     end
 
@@ -948,18 +902,15 @@ lua.pui = {} do
         local name = lua.pui.configs.input_name()
         lua.pui.configs.data[name] = base64.encode(json.stringify(package:save()))
         lua.pui.configs.write()
-        config_notify('success', 'Config', 'Saved: ' .. name)
     end
 
     lua.pui.configs.delete_selected = function ()
         local name = lua.pui.configs.selected_name()
         if name == 'Default' then
-            config_notify('error', 'Config', 'Default config is protected')
             return
         end
         lua.pui.configs.data[name] = nil
         lua.pui.configs.write()
-        config_notify('success', 'Config', 'Deleted: ' .. name)
     end
 
     lua.pui.configs.import_clipboard = function ()
@@ -971,9 +922,6 @@ lua.pui = {} do
         if ok then
             lua.pui.configs.data[name] = encoded
             lua.pui.configs.write()
-            config_notify('success', 'Config', 'Imported: ' .. name)
-        else
-            config_notify('error', 'Config', 'Import failed')
         end
     end
 
@@ -982,33 +930,10 @@ lua.pui = {} do
         local encoded = name == 'Default' and cfg or lua.pui.configs.data[name]
         if encoded then
             clipboard.set(encoded)
-            config_notify('success', 'Config', 'Exported: ' .. name)
-        else
-            config_notify('error', 'Config', 'Nothing to export')
         end
     end
 
     lua.pui.configs.read()
-    lua.pui.ui.buttons = {
-        export = lua.pui.ui.group.other:button('\f<color_tabs> Export config', function ()
-            lua.pui.ui.export()
-        end),
-        import = lua.pui.ui.group.other:button('\f<color_tabs> Import config', function ()
-            lua.pui.ui.import()
-        end),
-        default = lua.pui.ui.group.other:button('\f<color_tabs> Default config', function ()
-            lua.pui.ui.import(cfg)
-        end),
-        agressive = lua.pui.ui.group.other:button('\f<color_tabs> Agressive config', function ()
-            lua.pui.ui.import(cfg_agr)
-        end),
-        beta = lua.pui.ui.group.other:button('\f<color_tabs> Beta config', function ()
-            lua.pui.ui.import(cfg_beta)
-        end)
-    }
-    for _, ref in pairs(lua.pui.ui.buttons) do
-        ref:set_visible(false)
-    end
 
     lua.sounds.set(lua.pui.ui.search, lua.sounds.contract)
     lua.sounds.set(lua.pui.ui.rage, lua.sounds.contract)
@@ -1017,7 +942,6 @@ lua.pui = {} do
     lua.sounds.set(lua.pui.ui.world, lua.sounds.contract)
     lua.sounds.set(lua.pui.ui.additive, lua.sounds.contract)
     lua.sounds.set(lua.pui.ui.home, lua.sounds.contract)
-    lua.sounds.set(lua.pui.ui.buttons, lua.sounds.contract)
 
     lua.pui.ui.search.group:set_visible(false)
     lua.pui.ui.search.tab:depend({lua.pui.ui.search.group, 'Main'})
@@ -1027,10 +951,16 @@ lua.pui = {} do
     for _, ref in pairs(lua.pui.ui.rage) do
         ref:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage})
     end
+    lua.pui.ui.rage.peekbot_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage})
+    lua.pui.ui.rage.resolver_debug_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage})
+    lua.pui.ui.rage.backtrack_warning:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.backtrack_exploit, true})
     lua.pui.ui.rage.resolver_mode:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.resolver, true})
+    lua.pui.ui.rage.shot_logs_filter:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.shot_logs, true})
+    lua.pui.ui.rage.shot_stats_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.shot_logs, true})
     lua.pui.ui.rage.shot_logs_col:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.shot_logs, true})
     lua.pui.ui.rage.peekbot_bind:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.peekbot, true})
     lua.pui.ui.rage.peekbot_distance:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.peekbot, true})
+    lua.pui.ui.rage.peekbot_freestanding:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.peekbot, true})
     lua.pui.ui.rage.peekbot_visualize:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.rage}, {lua.pui.ui.rage.peekbot, true})
 
     lua.pui.ui.antiaim.manuals:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.builder})
@@ -1052,9 +982,14 @@ lua.pui = {} do
     lua.pui.ui.render.reload_indicator_color:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Reload indicator'})
     lua.pui.ui.render.lagcomp_box_color:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Lag comp box'})
     lua.pui.ui.render.lagcomp_text_color:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Lag comp box'})
+    lua.pui.ui.render.theme_preset:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
+    lua.pui.ui.render.visual_preset:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
+    lua.pui.ui.render.color_sync:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
+    lua.pui.ui.render.hud_preview:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
     lua.pui.ui.render.visual_tuning_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
     lua.pui.ui.render.ui_scale:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
     lua.pui.ui.render.ui_animation_speed:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world})
+    lua.pui.ui.render.grenade_style:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Grenade visuals'})
     lua.pui.ui.render.grenade_visuals_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Grenade visuals'})
     lua.pui.ui.render.grenade_timer:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Grenade visuals'})
     lua.pui.ui.render.smoke_timer_color:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Grenade visuals'}, {lua.pui.ui.render.grenade_timer, true})
@@ -1068,7 +1003,7 @@ lua.pui = {} do
     lua.pui.ui.render.cursor_trail_color:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Menu visuals'}, {lua.pui.ui.render.cursor_trail, true})
     lua.pui.ui.render.watermark_mode:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Watermark'})
     lua.pui.ui.render.watermark_items:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.render.panels_select, 'Watermark'}, {lua.pui.ui.render.watermark_mode, 'Mode 2'})
-lua.pui.ui.world.me_sharing_v:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'Local Sharing'})
+    lua.pui.ui.world.me_sharing_v:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'Local Sharing'})
     lua.pui.ui.world.hands_drag:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'Viewmodel'})
     lua.pui.ui.world.hand_fov:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.world.hands_drag, true}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'Viewmodel'})
     lua.pui.ui.world.hand_x:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.world.hands_drag, true}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'Viewmodel'})
@@ -1083,9 +1018,11 @@ lua.pui.ui.world.me_sharing_v:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui
     lua.pui.ui.world.zoom_scale:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'View changer'})
     lua.pui.ui.world.zoom_offset:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'View changer'}, {lua.pui.ui.world.zoom_scale, true})
     lua.pui.ui.world.aspectratio:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.world}, {lua.pui.ui.world.world_manager, 'View changer'})
+    lua.pui.ui.additive.quick_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features})
     lua.pui.ui.additive.force_update:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Force Update'})
     lua.pui.ui.additive.sounds_check:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Sounds'})
     lua.pui.ui.additive.sounds_list:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.additive.sounds_check, true}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Sounds'})
+    lua.pui.ui.additive.yandex_label:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Yandex Music'})
     lua.pui.ui.additive.yandex_x:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Yandex Music'})
     lua.pui.ui.additive.yandex_y:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Yandex Music'})
     lua.pui.ui.additive.yandex_w:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Yandex Music'})
@@ -1097,15 +1034,11 @@ lua.pui.ui.world.me_sharing_v:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui
     lua.pui.ui.additive.yandex_play:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Yandex Music'})
     lua.pui.ui.additive.yandex_next:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui.ui.search.tab, lua.pui.tabs.features}, {lua.pui.ui.additive.other, 'Yandex Music'})
     lua.pui.set_visible = function ()
+        lua.pui.update_title()
         local welcome_visible = lua.pui.ui.search.group:get() == 'Main' and lua.pui.ui.search.tab:get() == lua.pui.tabs.welcome
         if lua.pui.ui.welcome_refs ~= nil then
             for i = 1, #lua.pui.ui.welcome_refs do
                 ui.set_visible(lua.pui.ui.welcome_refs[i], welcome_visible)
-            end
-        end
-        if lua.pui.ui.buttons ~= nil then
-            for _, ref in pairs(lua.pui.ui.buttons) do
-                ref:set_visible(false)
             end
         end
         if lua.pui.ui.home and lua.pui.ui.home.cryonova_label then
@@ -1152,6 +1085,138 @@ lua.pui.ui.world.me_sharing_v:depend({lua.pui.ui.search.group, 'Main'}, {lua.pui
         end
     end
     client.set_event_callback('paint_ui', lua.pui.set_visible)
+end
+--#endregion
+
+--#region lua.visuals
+lua.visuals = lua.visuals or {} do
+    local function set_color(ref, r, g, b, a)
+        if ref == nil then return end
+        pcall(function () ref:set(r, g, b, a or 255) end)
+    end
+
+    local themes = {
+        Ice = {primary = {155, 210, 255, 255}, secondary = {231, 251, 255, 255}, accent = {143, 207, 250, 255}, muted = {200, 238, 246, 255}, background = {8, 12, 20, 220}},
+        Dark = {primary = {154, 166, 180, 255}, secondary = {232, 237, 244, 255}, accent = {92, 112, 132, 255}, muted = {178, 188, 200, 255}, background = {7, 8, 10, 230}},
+        Neon = {primary = {154, 112, 255, 255}, secondary = {92, 238, 255, 255}, accent = {255, 98, 190, 255}, muted = {215, 196, 255, 255}, background = {12, 7, 22, 225}},
+        Minimal = {primary = {218, 224, 230, 255}, secondary = {255, 255, 255, 255}, accent = {170, 182, 194, 255}, muted = {204, 210, 216, 255}, background = {11, 12, 13, 220}}
+    }
+
+    local function color_tag(c)
+        return string.char(7) .. string.format('%02X%02X%02X%02X', c[1], c[2], c[3], c[4] or 255)
+    end
+
+    local function theme_label(prefix, text, value)
+        local t = lua.visuals.theme()
+        return color_tag(t.primary) .. prefix .. ' ' .. color_tag(t.muted or t.secondary) .. text .. (value and (color_tag(t.secondary) .. value) or '')
+    end
+
+    local function update_theme_text()
+        local menu = lua.pui and lua.pui.ui
+        if not menu then return end
+        local t = lua.visuals.theme()
+        pui.macros.color_tabs = color_tag(t.primary)
+        pui.macros.color_start = color_tag(t.secondary)
+        pui.macros.color_sad = color_tag(t.accent)
+        pui.macros.color_ref = color_tag(t.muted or t.secondary)
+        if menu.welcome then
+            local me = entity.get_local_player()
+            local username = me and entity.get_player_name(me) or 'your_username'
+            pcall(function () ui.set(menu.welcome.user, theme_label('*', 'User: ', username)) end)
+            pcall(function () ui.set(menu.welcome.version, theme_label('*', 'Version: ', '1CRYONOVA [Nightly]')) end)
+            pcall(function () ui.set(menu.welcome.build_hint, color_tag(t.primary) .. 'cryonova ' .. color_tag(t.secondary) .. '~ ' .. color_tag(t.accent) .. 'optimized menu') end)
+            pcall(function () ui.set(menu.welcome.profile_badge, color_tag(t.muted or t.secondary) .. 'private build ' .. color_tag(t.secondary) .. '/ ' .. color_tag(t.accent) .. 'nightly channel') end)
+            pcall(function () ui.set(menu.welcome.theme_hint, color_tag(t.primary) .. 'Theme: ' .. color_tag(t.secondary) .. (menu.render.theme_preset:get() or 'Ice') .. color_tag(t.muted or t.secondary) .. ' / visual colors ready') end)
+        end
+        if menu.render then
+            pcall(function () menu.render.visual_tuning_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Visual tuning') end)
+            pcall(function () menu.render.grenade_visuals_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Grenade visuals') end)
+            pcall(function () menu.render.menu_visuals_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Menu visuals') end)
+        end
+        if menu.rage then
+            pcall(function () menu.rage.tweaks_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Combat') end)
+            pcall(function () menu.rage.safety_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Safety') end)
+            pcall(function () menu.rage.other_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Logging') end)
+            pcall(function () menu.rage.peekbot_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Peek bot') end)
+        end
+        if menu.additive then
+            pcall(function () menu.additive.quick_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Quick toggles') end)
+            pcall(function () menu.additive.yandex_label:set(color_tag(t.secondary) .. '~ ' .. color_tag(t.primary) .. 'Yandex Music') end)
+        end
+    end
+
+    function lua.visuals.theme()
+        local ui = lua.pui and lua.pui.ui and lua.pui.ui.render
+        local name = ui and ui.theme_preset and ui.theme_preset:get() or 'Ice'
+        return themes[name] or themes.Ice
+    end
+
+    function lua.visuals.sync_theme()
+        local ui = lua.pui.ui.render
+        local t = lua.visuals.theme()
+        update_theme_text()
+        set_color(ui.indicatorcol, t.primary[1], t.primary[2], t.primary[3], 255)
+        set_color(ui.indicatorcol2, t.secondary[1], t.secondary[2], t.secondary[3], 255)
+        set_color(ui.reload_indicator_color, t.accent[1], t.accent[2], t.accent[3], 235)
+        set_color(ui.lagcomp_box_color, t.primary[1], t.primary[2], t.primary[3], 210)
+        set_color(ui.lagcomp_text_color, t.secondary[1], t.secondary[2], t.secondary[3], 255)
+        set_color(ui.smoke_timer_color, t.primary[1], t.primary[2], t.primary[3], 255)
+        set_color(ui.molotov_timer_color, t.accent[1], math.min(t.accent[2] + 35, 255), math.min(t.accent[3] + 20, 255), 255)
+        set_color(ui.cursor_trail_color, t.accent[1], t.accent[2], t.accent[3], 210)
+        set_color(lua.pui.ui.rage.shot_logs_col, t.primary[1], t.primary[2], t.primary[3], 235)
+    end
+
+    function lua.visuals.apply_preset()
+        local ui = lua.pui.ui.render
+        local preset = ui.visual_preset:get()
+        if preset == 'Clean' then
+            pcall(function () ui.panels_select:set('Indicator', 'Watermark', 'Menu visuals') end)
+            pcall(function () ui.watermark_mode:set('Mode 3') end)
+            pcall(function () ui.animated_intro:set(false) end)
+            pcall(function () ui.menu_particles:set(false) end)
+            pcall(function () ui.cursor_trail:set(false) end)
+        elseif preset == 'Info' then
+            pcall(function () ui.panels_select:set('Indicator', 'Watermark', 'Damage', 'Reload indicator', 'Bomb timer', 'Grenade visuals') end)
+            pcall(function () ui.watermark_mode:set('Mode 3') end)
+            pcall(function () ui.grenade_timer:set(true) end)
+            pcall(function () ui.grenade_radius:set(false) end)
+        elseif preset == 'Full' then
+            pcall(function () ui.panels_select:set('Indicator', 'Obscuration', 'Damage', 'Hitmarker', 'Lag comp box', 'Watermark', 'Grenade visuals', 'Menu visuals', 'Reload indicator', 'Bomb timer') end)
+            pcall(function () ui.watermark_mode:set('Mode 2') end)
+            pcall(function () ui.grenade_timer:set(true) end)
+            pcall(function () ui.grenade_radius:set(true) end)
+            pcall(function () ui.menu_particles:set(true) end)
+            pcall(function () ui.cursor_trail:set(true) end)
+        end
+    end
+
+    function lua.visuals.hud_preview()
+        if not ui.is_menu_open() then return end
+        local ref = lua.pui.ui.render.hud_preview
+        if not ref or not ref:get() then return end
+        local sx, sy = client.screen_size()
+        local t = lua.visuals.theme()
+        local r, g, b = t.primary[1], t.primary[2], t.primary[3]
+        local function box(x, y, w, h, text)
+            render.round_rect(x, y, w, h, 5, 8, 12, 18, 145)
+            render.round_rect(x, y, w, h, 5, r, g, b, 42)
+            renderer.rectangle(x, y, w, 1, r, g, b, 135)
+            render.text(x + 8, y + 7, 235, 244, 255, 220, '-', 0, text)
+        end
+        box(sx / 2 - 58, sy / 2 + 24, 116, 48, 'indicator')
+        box(sx - 245, 18, 210, 30, 'watermark')
+        box(28, sy - 210, 176, 48, 'yandex hud')
+        box(sx / 2 - 180, sy - 164, 360, 24, 'aimbot logs')
+    end
+
+    lua.pui.ui.render.visual_preset:set_callback(function(ref)
+        if ref:get() ~= 'Custom' then lua.visuals.apply_preset() end
+    end, true)
+    lua.pui.ui.render.theme_preset:set_callback(function()
+        lua.visuals.sync_theme()
+    end, true)
+
+    client.set_event_callback('paint_ui', lua.visuals.hud_preview)
 end
 --#endregion
 
@@ -1277,7 +1342,7 @@ lua.rage = {} do
 
     local function rage_log(r, g, b, text)
         if client.color_log then
-            client.color_log(r, g, b, '[Cryonova Rage] ' .. text)
+            client.color_log(r, g, b, '[Cryonova] ' .. text)
         else
             print('[Cryonova Rage] ' .. text)
         end
@@ -1323,7 +1388,19 @@ lua.rage = {} do
         return force_safe and 2 or 1
     end
 
-    lua.rage.logs = { shots = {}, impacts = {}, notify = {} }
+    lua.rage.logs = { shots = {}, impacts = {}, notify = {}, stats = {shots = 0, hits = 0, misses = 0, hc_sum = 0} }
+
+    lua.rage.logs.filter_enabled = function(name)
+        local ref = lua.pui.ui.rage.shot_logs_filter
+        if ref == nil then return true end
+        return ref:get(name)
+    end
+
+    lua.rage.logs.stats_text = function()
+        local s = lua.rage.logs.stats
+        local avg = s.shots > 0 and math.floor((s.hc_sum / s.shots) + 0.5) or 0
+        return string.format('\f<color_ref> shots: %d | hits: %d | misses: %d | avg hc: %d%%', s.shots, s.hits, s.misses, avg)
+    end
     local function notify_color()
         local r, g, b, a = lua.pui.ui.rage.shot_logs_col:get()
         return r, g, b, a or 255
@@ -1446,6 +1523,23 @@ lua.rage = {} do
 
     lua.rage.resolver = { misses = {}, side = {}, defensive_data = {}, sim = {} }
 
+    lua.rage.resolver.debug_text = function()
+        if not rage_enabled('resolver') and not rage_enabled('defensive_aa_resolver') then
+            return '\f<color_ref> resolver target: inactive'
+        end
+        local best, best_miss = nil, -1
+        for _, enemy in ipairs(entity.get_players(true)) do
+            local misses = lua.rage.resolver.misses[enemy] or 0
+            if misses > best_miss then
+                best, best_miss = enemy, misses
+            end
+        end
+        if not best then return '\f<color_ref> resolver target: none' end
+        local side = lua.rage.resolver.side[best] or 0
+        local name = entity.get_player_name(best) or 'enemy'
+        return string.format('\f<color_ref> resolver target: \f<color_tabs>%s \f<color_ref>| side: %d | misses: %d', name, side, best_miss)
+    end
+
     lua.rage.resolver.apply = function()
         if not rage_enabled('resolver') then
             for _, enemy in ipairs(entity.get_players(true)) do
@@ -1457,6 +1551,7 @@ lua.rage = {} do
         for _, enemy in ipairs(entity.get_players(true)) do
             local miss_count = lua.rage.resolver.misses[enemy] or 0
             local side = miss_count == 1 and -1 or miss_count == 2 and 1 or 0
+            lua.rage.resolver.side[enemy] = side
             if side == 0 then
                 plist.set(enemy, 'Force body yaw', false)
             else
@@ -1524,6 +1619,8 @@ lua.rage = {} do
             hit_chance = math.floor((e.hit_chance or 0) + 0.5),
             hitgroup = e.hitgroup or 0
         }
+        lua.rage.logs.stats.shots = lua.rage.logs.stats.shots + 1
+        lua.rage.logs.stats.hc_sum = lua.rage.logs.stats.hc_sum + math.floor((e.hit_chance or 0) + 0.5)
     end
 
     lua.rage.logs_impact = function(e)
@@ -1568,8 +1665,11 @@ lua.rage = {} do
         local wanted_damage = pre and pre.damage or damage
         local lagcomp = pre and pre.lagcomp or false
         local message = string.format("hit %s for %d [%d] in the %s [%s] [hc: %d%%, bt: %d, lc: %s]", string.upper(target_name), damage, wanted_damage, group, aimed_group, hit_chance, history, tostring(lagcomp))
-        notify_push('hit', message)
-        rage_log(255, 255, 255, message)
+        lua.rage.logs.stats.hits = lua.rage.logs.stats.hits + 1
+        if lua.rage.logs.filter_enabled('Hits') then
+            notify_push('hit', message)
+            rage_log(255, 255, 255, message)
+        end
         if e.id ~= nil then
             lua.rage.logs.shots[e.id] = nil
         end
@@ -1599,8 +1699,11 @@ lua.rage = {} do
         local wanted_damage = pre and pre.damage or 0
         local lagcomp = pre and pre.lagcomp or false
         local message = string.format("missed %s's %s due to %s [dmg: %d, bt: %d, lc: %s]", string.upper(target_name), aimed_group, detail, wanted_damage, history, tostring(lagcomp))
-        notify_push('miss', message)
-        rage_log(255, 103, 103, message)
+        lua.rage.logs.stats.misses = lua.rage.logs.stats.misses + 1
+        if lua.rage.logs.filter_enabled('Misses') then
+            notify_push('miss', message)
+            rage_log(255, 103, 103, message)
+        end
         if e.id ~= nil then
             lua.rage.logs.shots[e.id] = nil
         end
@@ -1613,7 +1716,9 @@ lua.rage = {} do
         local group = hitgroup_names[(e.hitgroup or 0) + 1] or '?'
         if group == 'generic' and weapon_to_verb[e.weapon] ~= nil then
             local target = client.userid_to_entindex(e.userid)
-            rage_log(255, 255, 255, string.format('%s %s for %d damage (%d remaining)', weapon_to_verb[e.weapon], lower_name(target), e.dmg_health or 0, e.health or 0))
+            if lua.rage.logs.filter_enabled('Other') then
+                rage_log(255, 255, 255, string.format('%s %s for %d damage (%d remaining)', weapon_to_verb[e.weapon], lower_name(target), e.dmg_health or 0, e.health or 0))
+            end
         end
     end
 
@@ -1899,74 +2004,7 @@ lua.rage = {} do
     end)
 end
 --#endregion
---#region lua.keybinds 
-lua.keybinds = {}
-lua.keybinds.add = function(name, ref, gradient_fn)
-    lua.keybinds.binds[#lua.keybinds.binds + 1] = { name = string.sub(name, 1, 2), full_name = name, ref = ref, color = disabled_color, alpha = 0, gradient_progress = 0, gradient_fn = gradient_fn }
-end
-lua.keybinds.text = function(x, y, r, g, b, a, text, alpha)
-    if alpha == nil then
-        alpha = 1
-    end
 
-    if alpha <= 0 then
-        return
-    end
-
-    local text_wh = vector(render.measure_text(nil, text))
-
-    render.text(x + 10, y, r, g, b, a, nil, nil, '~ '..text)
-
-    lua.keybinds.y = lua.keybinds.y + text_wh.y * alpha
-end
-lua.keybinds.binds = {}
-lua.keybinds.add('Force body', lua.reference.rage.binds.body_aim)
-lua.keybinds.add('Safe point', lua.reference.rage.binds.safe_point)
-lua.keybinds.add('Double tap', lua.reference.rage.binds.double_tap[1].hotkey)
-lua.keybinds.add('Hide shots', lua.reference.rage.binds.on_shot_anti_aim[1].hotkey)
-lua.keybinds.add('Min. damage', lua.reference.rage.binds.minimum_damage_override[1].hotkey)
-lua.keybinds.add('Fake ducking', lua.reference.rage.binds.fakeduck)
-lua.keybinds.add('Fake latency', lua.reference.visuals.effects.ping[1].hotkey)
-lua.keybinds.add('Auto direction', lua.reference.antiaim.angles.freestanding.hotkey)
---#endregion
-
---#region lua.notifications
-lua.notifications = {} do
-    lua.notifications.active = {}
-    lua.notifications.history = {}
-    lua.notifications.last_stats = {fps = 0, ping = 0, loss = 0, watch = 0, keybinds = 0, spectators = 0}
-    lua.notifications.last_keybinds = {}
-    lua.notifications.last_spectators = {}
-    lua.notifications.initialized_keybinds = false
-
-    function lua.notifications.enabled()
-        return false
-    end
-
-    function lua.notifications.event_enabled(name)
-        return false
-    end
-
-    function lua.notifications.play_sound()
-    end
-
-    function lua.notifications.clear_history()
-        lua.notifications.history = {}
-    end
-
-    function lua.notifications.push(kind, title, message, duration, sound)
-    end
-
-    function lua.notifications.paint()
-    end
-
-    function lua.notifications.watch_stats()
-    end
-
-    function lua.notifications.think()
-    end
-end
---#endregion
 
 
 --#region lua.test
@@ -1980,6 +2018,15 @@ lua.test = {} do
     lua.test.intro_shards = {}
 
     function lua.test.get_colors()
+        if lua.visuals and lua.visuals.theme then
+            local t = lua.visuals.theme()
+            return {
+                primary = t.primary,
+                secondary = t.secondary,
+                background = t.background or {8, 10, 18, 220},
+                text = t.secondary or {238, 242, 255, 255}
+            }
+        end
         return {
             primary = {90, 190, 255, 255},
             secondary = {190, 90, 255, 255},
@@ -2086,8 +2133,9 @@ lua.test = {} do
 
         local scale = lua.test.scale()
         local r, g, b = color[1], color[2], color[3]
+        local style = lua.pui.ui.render.grenade_style:get()
         local label = kind == 'smoke' and 'smoke' or 'molotov'
-        local text = string.format('%s %.1fs', label, math.max(0, remaining))
+        local text = style == 'Minimal text' and string.format('%.1fs', math.max(0, remaining)) or string.format('%s %.1fs', label, math.max(0, remaining))
 
         render.text(sx + 1, sy + 1, 0, 0, 0, 180, 'c', 0, text)
         render.text(sx, sy, r, g, b, 235, 'c', 0, text)
@@ -2105,10 +2153,13 @@ lua.test = {} do
         local radius = final_radius * reveal
         local breathe = reveal_done and 0 or math.sin(now * 2.15 * speed + data.elapsed) * 2.5
         local r, g, b = color[1], color[2], color[3]
+        local style = lua.pui.ui.render.grenade_style:get()
+        if style == 'Minimal text' then return end
         local alpha = reveal_done and 92 or (45 + reveal * 65)
+        if style == 'Soft glow' then alpha = alpha * 0.72 end
 
         if radius < 6 then return end
-        circle_3d(data.origin, radius, 0, 1, 96, true, r, g, b, 12 + 18 * reveal)
+        circle_3d(data.origin, radius, 0, 1, 96, true, r, g, b, style == 'Soft glow' and 8 + 12 * reveal or 12 + 18 * reveal)
         circle_3d(data.origin, radius + breathe, 0, 1, 96, false, r, g, b, alpha)
     end
 
@@ -2119,10 +2170,13 @@ lua.test = {} do
         local radius = final_radius * reveal
         local flicker = reveal_done and 0 or math.sin(now * 8.5 * speed + data.elapsed * 3.0) * 4
         local r, g, b = color[1], color[2], color[3]
+        local style = lua.pui.ui.render.grenade_style:get()
+        if style == 'Minimal text' then return end
         local alpha = reveal_done and 110 or (55 + reveal * 70)
+        if style == 'Soft glow' then alpha = alpha * 0.72 end
 
         if radius < 6 then return end
-        circle_3d(data.origin, radius, 0, 1, 96, true, r, g, b, 14 + 20 * reveal)
+        circle_3d(data.origin, radius, 0, 1, 96, true, r, g, b, style == 'Soft glow' and 9 + 13 * reveal or 14 + 20 * reveal)
         circle_3d(data.origin, radius + flicker, 0, 1, 96, false, r, g, b, alpha)
     end
 
@@ -2917,7 +2971,6 @@ lua.animations = {} lua.render = {} do
         lua.render.anims.a = mathematic.lerp(lua.render.anims.a, lua.pui.ui.render.panels_select:get('Watermark') and 1 or 0, 0.06)
         lua.render.anims.b = mathematic.lerp(lua.render.anims.b, lua.pui.ui.world.world_manager:get('Local Sharing') and 1 or 0, 0.06)
         lua.render.anims.c = mathematic.lerp(lua.render.anims.c, math.exploit and lua.helps.exploits.defensive() > 0 and 1 or 0, 0.06)
-        lua.render.anims.d = mathematic.lerp(lua.render.anims.d, lua.pui.ui.render.panels_select:get('Binds') and 1 or 0, 0.06)
         lua.render.anims.h = mathematic.lerp(lua.render.anims.h, 0, 0.06)
         lua.render.anims.m = mathematic.lerp(lua.render.anims.m, entity.get_prop(me, 'm_bIsScoped') == 1 and 1 or 0, 0.06)
     end
@@ -3455,23 +3508,6 @@ lua.animations = {} lua.render = {} do
         draggable_dmg:dmg_indicator()
     end
 
-    function draggable:watermark()
-        local me = entity.get_local_player()
-        if not me then return end
-
-        local x, y = self:get_position()
-        render.round_rect(x - 2, y - 2, self.width + 4, self.height + 4, 6, 80, 80, 80, 255 * lua.render.anims.a)
-        render.round_rect(x - 1, y - 1, self.width + 2, self.height + 2, 6, 37, 37, 37, 255 * lua.render.anims.a)
-        render.text(x + 10, y + self.height / 4, 255, 255, 255, 255 * lua.render.anims.a, nil, 0, '✨ Cryonova   Javasense   Developer')
-    end
-
-    local draggable_window = draggable:new('draggable watermark', screen.x - 240, 10, 230, 30)
-
-    local initiliaze_watermark = function ()
-        draggable_window:handle_drag()
-        draggable_window:watermark()
-    end
-
     lua.render.obscuration = function()
         if lua.render.anims.u <= 0.01 then return end
         render.rectangle(0, 0, screen.x, screen.y, 1, 1, 1, 145 * lua.render.anims.u)
@@ -3878,9 +3914,31 @@ lua.animations = {} lua.render = {} do
         render.text(x, y, 255, 255, 255, 255 * lua.render.anims.a, flags, 0, text)
     end
 
+    local function watermark_mode_three_render()
+        local me = entity.get_local_player()
+        if not me then return end
+
+        local username = entity.get_player_name(me) or 'local'
+        local text = string.format('cryonova  |  %s  |  %d fps  |  %s  |  %s', username, watermark_fps(), watermark_ping(), watermark_time())
+        local flags = 'b'
+        local text_xy = vector(render.measure_text(flags, text))
+        local pad_x, pad_y = 11, 7
+        local w, h = text_xy.x + pad_x * 2, text_xy.y + pad_y * 2
+        local x, y = screen.x - w - 18, 16
+
+        render.round_rect(x, y, w, h, 5, 7, 10, 16, 185 * lua.render.anims.a)
+        render.round_rect(x, y, w, h, 5, 231, 251, 255, 14 * lua.render.anims.a)
+        renderer.rectangle(x, y, w, 1, 143, 207, 250, 145 * lua.render.anims.a)
+        render.text(x + pad_x + 1, y + pad_y + 1, 0, 0, 0, 185 * lua.render.anims.a, flags, 0, text)
+        render.text(x + pad_x, y + pad_y, 235, 248, 255, 255 * lua.render.anims.a, flags, 0, text)
+    end
+
     local render_watermark = function()
-        if lua.pui.ui.render.watermark_mode:get() == 'Mode 1' then
+        local mode = lua.pui.ui.render.watermark_mode:get()
+        if mode == 'Mode 1' then
             watermark_mode_one()
+        elseif mode == 'Mode 3' then
+            watermark_mode_three_render()
         else
             watermark_mode_two_render()
         end
@@ -3900,10 +3958,6 @@ lua.animations = {} lua.render = {} do
         return this:get('Hitmarker')
     end)
 
-    --lua.pui.ui.render.panels_select:set_event('paint_ui', initiliaze_watermark, function (this)
-    --    return this:get('Watermark')
-    --end)
-
     lua.pui.ui.render.panels_select:set_event('paint_ui', watermark, function (this)
         return this:get('Watermark')
     end)
@@ -3911,10 +3965,6 @@ lua.animations = {} lua.render = {} do
     lua.pui.ui.render.panels_select:set_event('paint_ui', initiliaze_dmg, function (this)
         return this:get('Damage')
     end)
-
-    --lua.pui.ui.render.panels_select:set_event('paint_ui', initiliaze_keybinds, function (this)
-    --    return this:get('Binds')
-    --end)
 
     lua.pui.ui.render.panels_select:set_event('net_update_end', lua.render.lagcomp_net_update, function (this)
         return this:get('Lag comp box')
@@ -4758,32 +4808,3 @@ client.set_event_callback('pre_render', lua.createmove.manual)
 client.set_event_callback('setup_command', lua.createmove.freestand)
 end
 --#endregion
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
