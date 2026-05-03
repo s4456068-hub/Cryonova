@@ -1,0 +1,224 @@
+export default {
+  async fetch(request, env) {
+    try {
+      const url = new URL(request.url);
+
+      if (request.method === "OPTIONS") {
+        return cors(new Response(null, { status: 204 }));
+      }
+
+      if (url.pathname === "/register") {
+        return cors(await register(request, env));
+      }
+
+      if (url.pathname === "/load") {
+        return cors(await load(request, env));
+      }
+
+      if (url.pathname === "/health") {
+        return cors(json({ ok: true, name: "cryonova-worker" }));
+      }
+
+      return cors(json({ ok: false, error: "not found" }, 404));
+    } catch (error) {
+      return cors(json({ ok: false, error: "server error" }, 500));
+    }
+  }
+};
+
+async function readInput(request) {
+  if (request.method === "GET") {
+    return Object.fromEntries(new URL(request.url).searchParams.entries());
+  }
+
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return await request.json();
+  }
+
+  const text = await request.text();
+  return Object.fromEntries(new URLSearchParams(text).entries());
+}
+
+function clean(value) {
+  return String(value || "").trim();
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
+}
+
+function text(data, status = 200) {
+  return new Response(data, {
+    status,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
+}
+
+function cors(response) {
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", "*");
+  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  headers.set("access-control-allow-headers", "content-type");
+  return new Response(response.body, { status: response.status, headers });
+}
+
+async function sha256(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function matchesSecret(input, storedPlain, storedSha256) {
+  if (storedSha256) {
+    return (await sha256(input)) === storedSha256;
+  }
+  return storedPlain === input;
+}
+
+async function getJson(kv, key) {
+  const raw = await kv.get(key);
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
+
+function isExpired(user) {
+  if (!user.expires_at) return false;
+  return Date.now() > Date.parse(user.expires_at);
+}
+
+async function register(request, env) {
+  const input = await readInput(request);
+  const username = clean(input.username);
+  const password = clean(input.password);
+  const license = clean(input.license || input.key);
+  const hwid = clean(input.hwid);
+
+  if (!username || !password || !license) {
+    return json({ ok: false, error: "missing fields" }, 400);
+  }
+
+  const userKey = `user:${username.toLowerCase()}`;
+  const existingUser = await getJson(env.CRYONOVA_KV, userKey);
+  if (existingUser) {
+    return json({ ok: false, error: "user already exists" }, 409);
+  }
+
+  const licenseKey = `license:${license}`;
+  const licenseData = await getJson(env.CRYONOVA_KV, licenseKey);
+  if (!licenseData || licenseData.active !== true) {
+    return json({ ok: false, error: "invalid license" }, 403);
+  }
+  if (licenseData.used_by) {
+    return json({ ok: false, error: "license already used" }, 403);
+  }
+
+  const user = {
+    password_sha256: await sha256(password),
+    active: true,
+    hwid,
+    license,
+    expires_at: licenseData.expires_at || null,
+    created_at: new Date().toISOString()
+  };
+
+  licenseData.used_by = username;
+  licenseData.used_at = new Date().toISOString();
+
+  await env.CRYONOVA_KV.put(userKey, JSON.stringify(user));
+  await env.CRYONOVA_KV.put(licenseKey, JSON.stringify(licenseData));
+
+  return json({ ok: true });
+}
+
+async function authorize(request, env) {
+  const input = await readInput(request);
+  const username = clean(input.username);
+  const password = clean(input.password);
+  const hwid = clean(input.hwid);
+
+  if (!username || !password) {
+    return { ok: false, status: 400, error: "missing login or password" };
+  }
+
+  const user = await getJson(env.CRYONOVA_KV, `user:${username.toLowerCase()}`);
+  if (!user || user.active !== true) {
+    return { ok: false, status: 403, error: "access denied" };
+  }
+
+  if (isExpired(user)) {
+    return { ok: false, status: 403, error: "subscription expired" };
+  }
+
+  if (!(await matchesSecret(password, user.password, user.password_sha256))) {
+    return { ok: false, status: 403, error: "wrong password" };
+  }
+
+  if (user.hwid && hwid && user.hwid !== hwid) {
+    return { ok: false, status: 403, error: "hwid mismatch" };
+  }
+
+  if (!user.hwid && hwid) {
+    user.hwid = hwid;
+    await env.CRYONOVA_KV.put(`user:${username.toLowerCase()}`, JSON.stringify(user));
+  }
+
+  return { ok: true, username };
+}
+
+async function load(request, env) {
+  const auth = await authorize(request, env);
+  if (!auth.ok) {
+    return json({ ok: false, error: auth.error }, auth.status);
+  }
+
+  const githubUrl = env.GITHUB_API_URL || env.GITHUB_RAW_URL;
+  if (!githubUrl) {
+    return json({ ok: false, error: "missing github url" }, 500);
+  }
+
+  const headers = {
+    "user-agent": "cryonova-worker",
+    "accept": env.GITHUB_API_URL
+      ? "application/vnd.github+json"
+      : "text/plain"
+  };
+
+  if (env.GITHUB_TOKEN) {
+    headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  }
+
+  const response = await fetch(githubUrl, { headers, cf: { cacheTtl: 0 } });
+  if (!response.ok) {
+    return json({ ok: false, error: "script fetch failed" }, 502);
+  }
+
+  const script = env.GITHUB_API_URL
+    ? decodeGithubContent(await response.json())
+    : await response.text();
+
+  if (!script) {
+    return json({ ok: false, error: "empty script" }, 502);
+  }
+
+  return text(script);
+}
+
+function decodeGithubContent(data) {
+  if (!data || !data.content) return "";
+  const compact = String(data.content).replace(/\s/g, "");
+  const binary = atob(compact);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
