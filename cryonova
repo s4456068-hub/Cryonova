@@ -630,6 +630,265 @@ local js = panorama.loadstring([[
 	}
 ]], "CSGOHud")()
 
+
+--
+-- Cryonova user marks in scoreboard
+--
+
+local cryonova_scoreboard_user_ids = {
+	['76561199019547064'] = true,
+	['76561199145881535'] = true,
+	['76561198070426116'] = true,
+	['76561199813588346'] = true,
+}
+
+local cryonova_scoreboard_icon_path = 'file://{images}/icons/cryonova/cryonova_mark.png'
+
+local cryonova_user_mark_js = panorama.loadstring([[
+	let entity_panels = {}
+	let entity_data = {}
+	let event_callbacks = {}
+
+	let SLOT_LAYOUT = `
+		<root>
+			<Panel style="min-width: 3px; padding-top: 2px; padding-left: 0px;" scaling='stretch-to-fit-y-preserve-aspect'>
+				<Image id="image" textureheight="21" style="opacity: 0.01; transition: opacity 0.1s ease-in-out 0.0s, img-shadow 0.12s ease-in-out 0.0s; padding: 3px 5px; margin: -3px -5px; margin-top: -5px;" />
+			</Panel>
+		</root>
+	`
+
+	let _DestroyEntityPanel = function(key) {
+		let panel = entity_panels[key]
+
+		if(panel != null && panel.IsValid()) {
+			let parent = panel.GetParent()
+
+			if(parent != null && parent.IsValid()) {
+				let original_rank = parent.GetChild(0)
+
+				if(original_rank != null) {
+					original_rank.visible = true
+				}
+
+				if(parent.FindChildTraverse("id-sb-skillgroup-image") != null) {
+					parent.FindChildTraverse("id-sb-skillgroup-image").style.margin = "0px 0px 0px 0px"
+				}
+			}
+
+			panel.DeleteAsync(0.0)
+		}
+
+		delete entity_panels[key]
+	}
+
+	let _DestroyEntityPanels = function() {
+		for(key in entity_panels) {
+			_DestroyEntityPanel(key)
+		}
+	}
+
+	let _GetOrCreateCustomPanel = function(xuid) {
+		if(entity_panels[xuid] == null || !entity_panels[xuid].IsValid()) {
+			entity_panels[xuid] = null
+
+			let root = $.GetContextPanel()
+			let container = root.FindChildTraverse("ScoreboardContainer") || root.FindChildTraverse("id-eom-scoreboard-container")
+
+			if(container == null) {
+				_Clear()
+				_DestroyEntityPanels()
+
+				return
+			}
+
+			let scoreboard_context_panel = container.FindChildTraverse("Scoreboard")
+
+			if(scoreboard_context_panel == null) {
+				return
+			}
+
+			scoreboard_context_panel.FindChildrenWithClassTraverse("sb-row").forEach(function(el) {
+				let scoreboard_el
+
+				if(el.m_xuid == xuid) {
+					el.Children().forEach(function(child_frame) {
+						if(child_frame.GetAttributeString("data-stat", "") == "rank") {
+							scoreboard_el = child_frame.GetChild(0)
+						}
+					})
+
+					if(scoreboard_el) {
+						let scoreboard_el_parent = scoreboard_el.GetParent()
+						let custom_icons = scoreboard_el_parent.FindChildTraverse("cryonova-user-icon")
+
+						if(custom_icons == null) {
+							custom_icons = $.CreatePanel("Panel", scoreboard_el_parent, "cryonova-user-icon", {})
+
+							let skillgroup = scoreboard_el_parent.FindChildTraverse("id-sb-skillgroup-image")
+							if(skillgroup != null) {
+								skillgroup.style.margin = "0px 0px 0px 0px"
+							}
+
+							let anchor = scoreboard_el_parent.GetChild(1)
+							if(anchor != null) {
+								scoreboard_el_parent.MoveChildAfter(custom_icons, anchor)
+							}
+
+							let original_rank = scoreboard_el_parent.GetChild(0)
+							if(original_rank != null) {
+								original_rank.visible = false
+							}
+
+							let panel_slot_parent = $.CreatePanel("Panel", custom_icons, "icon")
+							panel_slot_parent.visible = false
+							panel_slot_parent.BLoadLayoutFromString(SLOT_LAYOUT, false, false)
+						}
+
+						entity_panels[xuid] = custom_icons
+						return custom_icons
+					}
+				}
+			})
+		}
+
+		return entity_panels[xuid]
+	}
+
+	let _UpdatePlayer = function(entindex, image_path) {
+		if(entindex == null || entindex == 0) {
+			return
+		}
+
+		entity_data[entindex] = {
+			applied: false,
+			image_path: image_path
+		}
+	}
+
+	let _RemovePlayer = function(entindex) {
+		let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
+
+		if(xuid != null && xuid != "0") {
+			_DestroyEntityPanel(xuid)
+		}
+
+		delete entity_data[entindex]
+	}
+
+	let _ApplyPlayer = function(entindex) {
+		let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
+		let panel = _GetOrCreateCustomPanel(xuid)
+
+		if(panel == null) {
+			return false
+		}
+
+		let panel_slot_parent = panel.FindChild("icon")
+		panel_slot_parent.visible = true
+
+		let panel_slot = panel_slot_parent.FindChild("image")
+		panel_slot.visible = true
+		panel_slot.style.opacity = "1"
+		panel_slot.SetImage(entity_data[entindex].image_path)
+
+		return true
+	}
+
+	let _ApplyData = function() {
+		for(entindex in entity_data) {
+			entindex = parseInt(entindex)
+
+			let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
+
+			if(!entity_data[entindex].applied || entity_panels[xuid] == null || !entity_panels[xuid].IsValid()) {
+				if(_ApplyPlayer(entindex)) {
+					entity_data[entindex].applied = true
+				}
+			}
+		}
+	}
+
+	let _Create = function() {
+		event_callbacks["OnOpenScoreboard"] = $.RegisterForUnhandledEvent("OnOpenScoreboard", _ApplyData)
+		event_callbacks["Scoreboard_UpdateEverything"] = $.RegisterForUnhandledEvent("Scoreboard_UpdateEverything", _ApplyData)
+		event_callbacks["Scoreboard_UpdateJob"] = $.RegisterForUnhandledEvent("Scoreboard_UpdateJob", _ApplyData)
+	}
+
+	let _Clear = function() {
+		entity_data = {}
+		_DestroyEntityPanels()
+	}
+
+	let _Destroy = function() {
+		_Clear()
+
+		for(event in event_callbacks) {
+			$.UnregisterForUnhandledEvent(event, event_callbacks[event])
+			delete event_callbacks[event]
+		}
+	}
+
+	return {
+		create: _Create,
+		destroy: _Destroy,
+		clear: _Clear,
+		update: _UpdatePlayer,
+		remove: _RemovePlayer,
+		apply: _ApplyData
+	}
+]], "CSGOHud")()
+
+local function normalize_cryonova_scoreboard_xuid(xuid)
+	if type(xuid) ~= 'string' then
+		return nil
+	end
+
+	local value = xuid:gsub('%D', '')
+
+	return value ~= '' and value or nil
+end
+
+local function is_cryonova_scoreboard_user(player)
+	if player == entity.get_local_player() then
+		return true
+	end
+
+	local ok, xuid = pcall(function()
+		return GameStateAPI.GetPlayerXuidStringFromEntIndex(player)
+	end)
+
+	if not ok then
+		return false
+	end
+
+	xuid = normalize_cryonova_scoreboard_xuid(xuid)
+
+	return xuid ~= nil and cryonova_scoreboard_user_ids[xuid] == true
+end
+
+local function update_cryonova_scoreboard_marks()
+	for player = 1, 64 do
+		if entity.get_classname(player) == 'CCSPlayer' then
+			if is_cryonova_scoreboard_user(player) then
+				cryonova_user_mark_js.update(player, cryonova_scoreboard_icon_path)
+			else
+				cryonova_user_mark_js.remove(player)
+			end
+		end
+	end
+
+	cryonova_user_mark_js.apply()
+end
+
+cryonova_user_mark_js.create()
+client.set_event_callback('paint', update_cryonova_scoreboard_marks)
+client.set_event_callback('level_init', function()
+	cryonova_user_mark_js.clear()
+end)
+client.set_event_callback('shutdown', function()
+	cryonova_user_mark_js.destroy()
+end)
+
 --
 -- logic for sorting weapons
 --
@@ -7219,7 +7478,8 @@ local resource do
                             'Astra',
                             'Amnesia',
                             'Lyrics',
-                            'Sauron'
+                            'Sauron',
+                            'Bruteforce'
                         }
                     )
                 )
@@ -18455,6 +18715,9 @@ local function on_player_hurt(e)
         local state = {
             misses = { },
             side = { },
+            resolver_memory = { },
+            resolver_current_yaw = { },
+            bruteforce_cycle = { },
             astra = { },
             flick = { },
             flick_misses = { },
@@ -18510,6 +18773,97 @@ local function on_player_hurt(e)
 
         local function normalize_yaw(value)
             return utils.normalize(value or 0, -180, 180)
+        end
+
+        local function resolver_yaw_key(yaw)
+            return tostring(math.floor((yaw or 0) + 0.5))
+        end
+
+        local function get_resolver_memory(enemy)
+            local memory = state.resolver_memory[enemy]
+
+            if memory == nil then
+                memory = {
+                    hits = { },
+                    misses = { },
+                    best_yaw = nil,
+                    best_hits = 0
+                }
+
+                state.resolver_memory[enemy] = memory
+            end
+
+            return memory
+        end
+
+        local function remember_resolver_yaw(enemy, yaw)
+            state.resolver_current_yaw[enemy] = utils.clamp(yaw or 0, -60, 60)
+        end
+
+        local function mark_resolver_hit(enemy)
+            local yaw = state.resolver_current_yaw[enemy]
+
+            if yaw == nil then
+                return
+            end
+
+            local memory = get_resolver_memory(enemy)
+            local key = resolver_yaw_key(yaw)
+
+            memory.hits[key] = (memory.hits[key] or 0) + 1
+            memory.misses[key] = math.max((memory.misses[key] or 0) - 1, 0)
+
+            if memory.hits[key] >= memory.best_hits then
+                memory.best_yaw = yaw
+                memory.best_hits = memory.hits[key]
+            end
+        end
+
+        local function mark_resolver_miss(enemy)
+            local yaw = state.resolver_current_yaw[enemy]
+
+            if yaw == nil then
+                return
+            end
+
+            local memory = get_resolver_memory(enemy)
+            local key = resolver_yaw_key(yaw)
+
+            memory.misses[key] = (memory.misses[key] or 0) + 1
+        end
+
+        local function choose_memory_yaw(enemy, candidates, cycle)
+            local memory = get_resolver_memory(enemy)
+
+            if memory.best_yaw ~= nil then
+                local key = resolver_yaw_key(memory.best_yaw)
+
+                if (memory.misses[key] or 0) < 2 then
+                    return memory.best_yaw, 'learned'
+                end
+            end
+
+            local best_yaw, best_misses, best_index = nil, nil, 1
+            local count = #candidates
+
+            for offset = 0, count - 1 do
+                local index = ((cycle + offset) % count) + 1
+                local yaw = candidates[index]
+                local key = resolver_yaw_key(yaw)
+                local misses = memory.misses[key] or 0
+
+                if misses < 2 then
+                    return yaw, tostring(index)
+                end
+
+                if best_misses == nil or misses < best_misses then
+                    best_yaw = yaw
+                    best_misses = misses
+                    best_index = index
+                end
+            end
+
+            return best_yaw or candidates[1] or 0, tostring(best_index)
         end
 
         local function get_latency()
@@ -19148,6 +19502,7 @@ end
             local yaw = get_yaw(enemy)
             local body_yaw = lyrics_get_angle(enemy, yaw)
 
+            remember_resolver_yaw(enemy, body_yaw)
             pcall(plist.set, enemy, 'Force body yaw', true)
             pcall(plist.set, enemy, 'Force body yaw value', body_yaw)
             pcall(plist.set, enemy, 'Correction active', true)
@@ -19539,6 +19894,58 @@ end
             end
         end
 
+        local bruteforce_angles = {
+            0,
+            58,
+            -58,
+            35,
+            -35,
+            20,
+            -20
+        }
+
+        local function apply_bruteforce_resolver(enemy)
+            if not entity.is_alive(enemy) or entity.is_dormant(enemy) then
+                reset_enemy(enemy)
+                return
+            end
+
+            local cycle = state.bruteforce_cycle[enemy] or 0
+            local _, _, _, speed = get_velocity(enemy)
+            local pose_delta = ((entity.get_prop(enemy, 'm_flPoseParameter', 11) or 0.5) * 120) - 60
+            local candidates = { }
+
+            for i = 1, #bruteforce_angles do
+                candidates[i] = bruteforce_angles[i]
+            end
+
+            if math.abs(pose_delta) > 12 then
+                table.insert(candidates, 1, utils.clamp(-pose_delta, -58, 58))
+            end
+
+            if speed > 120 then
+                table.insert(candidates, 1, utils.clamp(pose_delta, -45, 45))
+            end
+
+            local body_yaw, index = choose_memory_yaw(enemy, candidates, cycle)
+
+            state.side[enemy] = body_yaw < 0 and -1 or body_yaw > 0 and 1 or 0
+            state.debug.side_names[enemy] = index == 'learned' and 'brute learned' or 'brute ' .. tostring(index)
+            state.debug.deltas[enemy] = body_yaw
+
+            if body_yaw == 0 then
+                pcall(plist.set, enemy, 'Force body yaw', false)
+                pcall(plist.set, enemy, 'Force body yaw value', 0)
+                pcall(plist.set, enemy, 'Correction active', false)
+                return
+            end
+
+            remember_resolver_yaw(enemy, body_yaw)
+            pcall(plist.set, enemy, 'Force body yaw', true)
+            pcall(plist.set, enemy, 'Force body yaw value', body_yaw)
+            pcall(plist.set, enemy, 'Correction active', true)
+        end
+
         local function score_debug_target(enemy, eye_x, eye_y, eye_z, view_pitch, view_yaw)
             local x, y, z = get_origin(enemy)
 
@@ -19719,10 +20126,11 @@ end
             return record
         end
 
-        local function apply_flick_resolver()
+        local function apply_flick_resolver(enemies)
+            enemies = enemies or entity.get_players(true)
             if not ref.flick:get() then
                 if state.flick_active and not ref.enabled:get() then
-                    for _, enemy in ipairs(entity.get_players(true)) do
+                    for _, enemy in ipairs(enemies) do
                         reset_enemy(enemy)
                     end
                 end
@@ -19736,7 +20144,7 @@ end
 
             local threat = client.current_threat()
 
-            for _, enemy in ipairs(entity.get_players(true)) do
+            for _, enemy in ipairs(enemies) do
                 local record = update_flick_record(enemy)
                 local miss_cycle = state.flick_misses[enemy] or 0
                 local active = (
@@ -19778,10 +20186,11 @@ end
             end
         end
 
-        local function apply_resolver()
+        local function apply_resolver(enemies)
+            enemies = enemies or entity.get_players(true)
             if not ref.enabled:get() then
                 if state.resolver_active then
-                    for _, enemy in ipairs(entity.get_players(true)) do
+                    for _, enemy in ipairs(enemies) do
                         reset_enemy(enemy)
                     end
 
@@ -19799,7 +20208,7 @@ end
             local mode = ref.mode:get()
 
             if state.resolver_mode ~= mode then
-                for _, enemy in ipairs(entity.get_players(true)) do
+                for _, enemy in ipairs(enemies) do
                     reset_enemy(enemy)
                 end
 
@@ -19808,7 +20217,7 @@ end
                 state.resolver_mode = mode
             end
 
-            for _, enemy in ipairs(entity.get_players(true)) do
+            for _, enemy in ipairs(enemies) do
                 if mode == 'Astra' then
                     apply_astra_resolver(enemy)
                 elseif mode == 'Amnesia' then
@@ -19817,16 +20226,19 @@ end
                     apply_lyrics_resolver(enemy)
                 elseif mode == 'Sauron' then
                     apply_sauron_resolver(enemy)
+                elseif mode == 'Bruteforce' then
+                    apply_bruteforce_resolver(enemy)
                 else
                     apply_cryonova_resolver(enemy)
                 end
             end
         end
 
-        local function apply_defensive_resolver()
+        local function apply_defensive_resolver(enemies)
+            enemies = enemies or entity.get_players(true)
             if not ref.defensive:get() then
                 if state.defensive_active then
-                    for _, enemy in ipairs(entity.get_players(true)) do
+                    for _, enemy in ipairs(enemies) do
                         pcall(plist.set, enemy, 'force pitch', false)
                     end
 
@@ -19838,7 +20250,7 @@ end
 
             state.defensive_active = true
 
-            for _, enemy in ipairs(entity.get_players(true)) do
+            for _, enemy in ipairs(enemies) do
                 local data = state.defensive[enemy]
 
                 if data == nil then
@@ -19935,11 +20347,15 @@ end
             end
 
             if ref.enabled:get() and e.target ~= nil then
+                mark_resolver_hit(e.target)
+                state.bruteforce_cycle[e.target] = 0
                 state.debug.misses[e.target] = 0
             end
 
             if health ~= nil and health < 1 then
                 state.misses[e.target] = 0
+                state.bruteforce_cycle[e.target] = 0
+                state.resolver_current_yaw[e.target] = nil
                 state.flick_misses[e.target] = 0
                 state.debug.misses[e.target] = 0
             end
@@ -19960,7 +20376,9 @@ end
             )
 
             if can_update_side and e.target ~= nil and e.reason == '?' then
+                mark_resolver_miss(e.target)
                 state.misses[e.target] = ((state.misses[e.target] or 0) + 1) % 3
+                state.bruteforce_cycle[e.target] = ((state.bruteforce_cycle[e.target] or 0) + 1) % #bruteforce_angles
             end
 
             if ref.enabled:get() and e.target ~= nil and e.reason == '?' then
@@ -19979,9 +20397,11 @@ end
         end
 
         local function on_net_update_end()
-            apply_resolver()
-            apply_flick_resolver()
-            apply_defensive_resolver()
+            local enemies = entity.get_players(true)
+
+            apply_resolver(enemies)
+            apply_flick_resolver(enemies)
+            apply_defensive_resolver(enemies)
         end
 
         local function on_paint()
@@ -25623,111 +26043,73 @@ local render do
                     position.y = position.y + round(measure.y * value)
                 end
 
+                local mini_measure_cache = { }
+
                 local function draw_mini_item(position, text, r, g, b, a, value)
                     local flags = '-'
-                    local measure = vector(
-                        renderer.measure_text(flags, text)
-                    )
+                    local measure = mini_measure_cache[text]
+
+                    if measure == nil then
+                        measure = vector(
+                            renderer.measure_text(flags, text)
+                        )
+
+                        mini_measure_cache[text] = measure
+                    end
 
                     local x, y = position.x, position.y do
                         x = round(x - (measure.x * 0.5) * (1 - align_value))
                     end
 
-                    a = a * alpha_value * (value or 1)
+                    local item_alpha = a * alpha_value * (value or 1)
 
-                    renderer.text(x, y, r, g, b, a, flags, nil, text)
+                    renderer.text(x, y, r, g, b, item_alpha, flags, nil, text)
 
                     position.y = position.y + round(measure.y * (value or 1))
                 end
 
                 local function draw_mini_pack(position, r1, g1, b1, a1)
                     local alpha_resolver = resource.main.ragebot.alpha_resolver
-                    local items = { }
 
                     if alpha_resolver.enabled:get() then
-                        items[#items + 1] = {
-                            'RES ' .. string.upper(alpha_resolver.mode:get()),
-                            210, 210, 220, 145,
-                            1
-                        }
+                        draw_mini_item(position, 'RES ' .. string.upper(alpha_resolver.mode:get()), 210, 210, 220, 145, 1)
                     end
 
                     if ref.select:get 'State' then
-                        items[#items + 1] = {
-                            get_state(),
-                            250, 250, 250, 125,
-                            1
-                        }
+                        draw_mini_item(position, get_state(), 250, 250, 250, 125, 1)
                     end
 
                     if ref.select:get 'Double tap' and software.is_double_tap_active() then
                         local charge = math.floor(utils.clamp(charge_value, 0, 1) * 100 + 0.5)
-                        items[#items + 1] = {
-                            'DT ' .. tostring(charge) .. '%',
-                            r1, g1, b1, math.max(a1, 175),
-                            math.max(dt_value, 0.35)
-                        }
+                        draw_mini_item(position, 'DT ' .. tostring(charge) .. '%', r1, g1, b1, math.max(a1, 175), math.max(dt_value, 0.35))
                     end
 
                     if ref.select:get 'Hide shots' and software.is_on_shot_antiaim_active() then
-                        items[#items + 1] = {
-                            'OSAA',
-                            250, 250, 250, 175,
-                            math.max(osaa_value, 0.35)
-                        }
+                        draw_mini_item(position, 'OSAA', 250, 250, 250, 175, math.max(osaa_value, 0.35))
                     end
 
                     if ref.select:get 'Body aim' and ui.get(software.ragebot.aimbot.force_body_aim) then
-                        items[#items + 1] = {
-                            'BODY',
-                            250, 250, 250, 175,
-                            math.max(baim_value, 0.35)
-                        }
+                        draw_mini_item(position, 'BODY', 250, 250, 250, 175, math.max(baim_value, 0.35))
                     end
 
                     if ref.select:get 'Hitchance' and (session.hitchance.updated_hotkey and session.hitchance.updated_this_tick) then
-                        items[#items + 1] = {
-                            'HC',
-                            250, 250, 250, 175,
-                            math.max(hc_value, 0.35)
-                        }
+                        draw_mini_item(position, 'HC', 250, 250, 250, 175, math.max(hc_value, 0.35))
                     end
 
                     if software.is_override_minimum_damage() then
-                        items[#items + 1] = {
-                            'DMG ' .. tostring(software.get_override_damage()),
-                            250, 250, 250, 175,
-                            1
-                        }
+                        draw_mini_item(position, 'DMG ' .. tostring(software.get_override_damage()), 250, 250, 250, 175, 1)
                     end
 
                     if software.is_freestanding() then
-                        items[#items + 1] = {
-                            'FS',
-                            250, 250, 250, 160,
-                            1
-                        }
+                        draw_mini_item(position, 'FS', 250, 250, 250, 160, 1)
                     end
 
                     if software.is_quick_peek_assist() then
-                        items[#items + 1] = {
-                            'PEEK',
-                            250, 250, 250, 160,
-                            1
-                        }
+                        draw_mini_item(position, 'PEEK', 250, 250, 250, 160, 1)
                     end
 
                     if software.is_duck_peek_assist() then
-                        items[#items + 1] = {
-                            'FD',
-                            250, 250, 250, 160,
-                            1
-                        }
-                    end
-
-                    for i = 1, #items do
-                        local item = items[i]
-                        draw_mini_item(position, item[1], item[2], item[3], item[4], item[5], item[6])
+                        draw_mini_item(position, 'FD', 250, 250, 250, 160, 1)
                     end
                 end
                 local function update_values(me)
