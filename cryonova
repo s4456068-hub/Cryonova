@@ -7658,11 +7658,7 @@ local resource do
                     'Ragebot', 'alpha_resolver.mode', menu.new(
                         ui.new_combobox, 'AA', 'Anti-aimbot angles', new_key('Resolver mode', 'alpha_resolver'), {
                             'Cryonova',
-                            'Astra',
-                            'Amnesia',
-                            'Lyrics',
-                            'Sauron',
-                            'Bruteforce'
+                            'Sauron'
                         }
                     )
                 )
@@ -7711,85 +7707,6 @@ local resource do
                         ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Flick exploit resolver', 'alpha_resolver')
                     )
                 )
-
-                alpha_resolver.lyrics_mode = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_mode', menu.new(
-                        ui.new_combobox, 'AA', 'Anti-aimbot angles', new_key('Lyrics mode', 'alpha_resolver'), {
-                            'Smart detection',
-                            'Bruteforce PRO',
-                            'AI adaptation',
-                            'Rage mode',
-                            'Extreme bruteforce',
-                            'Automatic'
-                        }
-                    )
-                )
-
-                alpha_resolver.lyrics_lby_breaker = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_lby_breaker', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Lyrics LBY breaker', 'alpha_resolver')
-                    )
-                )
-
-                alpha_resolver.lyrics_miss_adapt = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_miss_adapt', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Lyrics miss adaptation', 'alpha_resolver')
-                    )
-                )
-
-                alpha_resolver.lyrics_anti_bruteforce = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_anti_bruteforce', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Lyrics anti-bruteforce', 'alpha_resolver')
-                    )
-                )
-
-                alpha_resolver.lyrics_desync_detector = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_desync_detector', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Lyrics desync detector', 'alpha_resolver')
-                    )
-                )
-
-                alpha_resolver.lyrics_prediction_boost = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_prediction_boost', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Lyrics prediction boost', 'alpha_resolver')
-                    )
-                )
-
-                alpha_resolver.lyrics_jitter_correction = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_jitter_correction', menu.new(
-                        ui.new_slider, 'AA', 'Anti-aimbot angles', new_key('Lyrics jitter correction', 'alpha_resolver'), 0, 100, 85, true, '%', 1
-                    )
-                )
-
-                alpha_resolver.lyrics_brute_speed = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_brute_speed', menu.new(
-                        ui.new_slider, 'AA', 'Anti-aimbot angles', new_key('Lyrics bruteforce speed', 'alpha_resolver'), 1, 10, 5, true, 'x', 1
-                    )
-                )
-
-                alpha_resolver.lyrics_angle_precision = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_angle_precision', menu.new(
-                        ui.new_slider, 'AA', 'Anti-aimbot angles', new_key('Lyrics angle precision', 'alpha_resolver'), 1, 100, 95, true, '%', 1
-                    )
-                )
-
-                alpha_resolver.lyrics_miss_threshold = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_miss_threshold', menu.new(
-                        ui.new_slider, 'AA', 'Anti-aimbot angles', new_key('Lyrics miss threshold', 'alpha_resolver'), 1, 10, 3, true, nil, 1
-                    )
-                )
-
-                alpha_resolver.lyrics_desync_range = config_system.push(
-                    'Ragebot', 'alpha_resolver.lyrics_desync_range', menu.new(
-                        ui.new_slider, 'AA', 'Anti-aimbot angles', new_key('Lyrics desync range', 'alpha_resolver'), 0, 180, 120, true, ' deg', 1
-                    )
-                )
-
-                alpha_resolver.lyrics_lby_breaker:set(true)
-                alpha_resolver.lyrics_miss_adapt:set(true)
-                alpha_resolver.lyrics_anti_bruteforce:set(true)
-                alpha_resolver.lyrics_desync_detector:set(true)
-                alpha_resolver.lyrics_prediction_boost:set(true)
 
                 alpha_resolver.sauron_adaptive_weapons = config_system.push(
                     'Ragebot', 'alpha_resolver.sauron_adaptive_weapons', menu.new(
@@ -10200,6 +10117,15 @@ local resource do
                     )
                 )
 
+                damage_esp.style = config_system.push(
+                    'User interface', 'damage_esp.style', menu.new(
+                        ui.new_combobox, 'AA', 'Anti-aimbot angles', new_key('Style', 'damage_esp'), {
+                            'Solus',
+                            'Classic'
+                        }
+                    )
+                )
+
                 damage_esp.hitbox = config_system.push(
                     'User interface', 'damage_esp.hitbox', menu.new(
                         ui.new_combobox, 'AA', 'Anti-aimbot angles', new_key('Hitbox selection', 'damage_esp'), {
@@ -10207,6 +10133,42 @@ local resource do
                             'Chest',
                             'Leg/feets'
                         }
+                    )
+                )
+
+                damage_esp.font = config_system.push(
+                    'User interface', 'damage_esp.font', menu.new(
+                        ui.new_combobox, 'AA', 'Anti-aimbot angles', new_key('Font', 'damage_esp'), {
+                            'Default',
+                            'Small',
+                            'Bold'
+                        }
+                    )
+                )
+
+                damage_esp.offset = config_system.push(
+                    'User interface', 'damage_esp.offset', menu.new(
+                        ui.new_slider, 'AA', 'Anti-aimbot angles', new_key('Offset', 'damage_esp'), 1, 32, 17, true, 'px'
+                    )
+                )
+
+                damage_esp.active_label = menu.new(
+                    ui.new_label, 'AA', 'Anti-aimbot angles', new_key('Lethal color', 'damage_esp')
+                )
+
+                damage_esp.active_color = config_system.push(
+                    'User interface', 'damage_esp.active_color', menu.new(
+                        ui.new_color_picker, 'AA', 'Anti-aimbot angles', new_key('Lethal color picker', 'damage_esp'), 253, 69, 106, 255
+                    )
+                )
+
+                damage_esp.inactive_label = menu.new(
+                    ui.new_label, 'AA', 'Anti-aimbot angles', new_key('Damage color', 'damage_esp')
+                )
+
+                damage_esp.inactive_color = config_system.push(
+                    'User interface', 'damage_esp.inactive_color', menu.new(
+                        ui.new_color_picker, 'AA', 'Anti-aimbot angles', new_key('Damage color picker', 'damage_esp'), 255, 255, 255, 255
                     )
                 )
 
@@ -11045,19 +11007,7 @@ local resource do
                         menu_logic.set(alpha_resolver.debug_max_fov, true)
                         menu_logic.set(alpha_resolver.debug_accent, true)
 
-                        if resolver_mode == 'Lyrics' then
-                            menu_logic.set(alpha_resolver.lyrics_mode, true)
-                            menu_logic.set(alpha_resolver.lyrics_lby_breaker, true)
-                            menu_logic.set(alpha_resolver.lyrics_miss_adapt, true)
-                            menu_logic.set(alpha_resolver.lyrics_anti_bruteforce, true)
-                            menu_logic.set(alpha_resolver.lyrics_desync_detector, true)
-                            menu_logic.set(alpha_resolver.lyrics_prediction_boost, true)
-                            menu_logic.set(alpha_resolver.lyrics_jitter_correction, true)
-                            menu_logic.set(alpha_resolver.lyrics_brute_speed, true)
-                            menu_logic.set(alpha_resolver.lyrics_angle_precision, true)
-                            menu_logic.set(alpha_resolver.lyrics_miss_threshold, true)
-                            menu_logic.set(alpha_resolver.lyrics_desync_range, true)
-                        elseif resolver_mode == 'Sauron' then
+                        if resolver_mode == 'Sauron' then
                             menu_logic.set(alpha_resolver.sauron_adaptive_weapons, true)
 
                             if alpha_resolver.sauron_adaptive_weapons:get() then
@@ -11903,8 +11853,20 @@ local resource do
                         goto continue
                     end
 
-                    menu_logic.set(ref.damage_esp.hitbox, true)
-                    menu_logic.set(ref.damage_esp.mark_on, true)
+                    menu_logic.set(ref.damage_esp.style, true)
+
+                    if ref.damage_esp.style:get() == 'Solus' then
+                        menu_logic.set(ref.damage_esp.hitbox, true)
+                        menu_logic.set(ref.damage_esp.mark_on, true)
+                    else
+                        menu_logic.set(ref.damage_esp.font, true)
+                        menu_logic.set(ref.damage_esp.offset, true)
+                        menu_logic.set(ref.damage_esp.active_label, true)
+                        menu_logic.set(ref.damage_esp.active_color, true)
+                        menu_logic.set(ref.damage_esp.inactive_label, true)
+                        menu_logic.set(ref.damage_esp.inactive_color, true)
+                    end
+
                     menu_logic.set(ref.damage_esp.separator, true)
 
                     ::continue::
@@ -18903,7 +18865,6 @@ local function on_player_hurt(e)
             resolver_memory = { },
             resolver_current_yaw = { },
             bruteforce_cycle = { },
-            astra = { },
             flick = { },
             flick_misses = { },
             debug = {
@@ -19200,25 +19161,6 @@ local function on_player_hurt(e)
             return 'static', delta, 0
         end
 
-        local function create_astra_record()
-            return {
-                is_simtime_update = false,
-                is_jittering = false,
-                is_prev_jittering = false,
-                server_time = 0,
-                simtime = 0,
-                old_simtime = 0,
-                prev_eye_yaw = 0,
-                eye_angles = vector(),
-                prev_rotation = 0,
-                rotation = vector(),
-                prev_delta = 0,
-                delta = 0,
-                fakelag_ticks = 0,
-                choked_ticks = 0
-            }
-        end
-
         local function create_flick_record()
             return {
                 simtime = 0,
@@ -19233,515 +19175,7 @@ local function on_player_hurt(e)
                 confidence = 0
             }
         end
-        -- Codex integrated resolver strategies: Amnesia, Lyrics, Sauron.
--- #region: NN anti-aim correction (pre-trained, Mario NN resolver style)
-local AMNESIA_NN_PRESET_STR = [=[
-|INFO|FF BP NN|I|40|O|1|HL|1|NHL|10|LR|0.3|BW|-1.1559066392366e-05{-1.1202450064138,-0.43692358428945,-0.13930987099988,1.2473693747317,-1.0512952920563,1.3270403255733,-1.3048390365862,0.67144977762124,0.22895362182248,-0.80409868646125,0.80970370419299,-0.094876011124505,1.8085297300312,-3.1213051697127,0.15564586269487,1.243941161686,-0.63451864091975,0.85274078529101,1.2094977572229,0.62863360591113,-0.65126689180398,-0.59910446978325,-0.27530302959635,-0.37900970996814,-0.45176552529037,0.55370533700818,0.64138597420234,0.55680960465419,-0.61526474930497,0.3636652929368,-0.065175113965139,-0.36903881731361,0.12405837818835,-0.73977745618948,0.63540725046327,-0.45414746029774,0.79157121985721,-0.42317748048187,0.079063967276199,0.94263076966404,}3.1873687881385e-07{-0.33085972681749,1.3974765045622,-0.53805929633813,-0.67028441463719,0.9546600346727,-0.20504330455771,0.14603469737588,-0.22584991835587,-0.59708982950384,-0.096585443153326,-0.40914869100385,0.15252807361841,0.76983088009555,0.1135895273262,-0.046635440565021,0.052936898188129,0.43810347271126,0.7730153833329,0.66231510990403,0.58338534121945,0.86213212067021,0.87378351704409,-0.91200616034745,0.96259979650566,0.48645308856345,-0.62811218755657,0.37356359696407,0.85840784699586,0.53809980261285,0.67041507564095,-0.28260659218288,-0.83469318664078,-0.71786782846342,0.20177599197934,0.5580614689448,-0.14722750093401,-0.8674737129836,-0.12700793895558,0.18537378239585,0.64549671395507,}4.2982839371136e-06{-0.25445981857133,0.13249673996283,-0.2718035127553,-0.72430954461389,1.4232117247034,-0.33952965981642,1.6825855658027,0.4430270099209,0.15716956679741,1.1364623417016,-1.2811299615557,-2.467200066115,-0.36174012131967,2.7037878931814,-0.34114087452533,-1.7333547565663,-1.0167292273294,-0.80970388354612,0.1237717895204,0.36641949687082,-0.11871201536506,-0.8181383753111,-0.25342722612542,0.38346749694153,0.33325877812144,-0.26414654291822,0.14819168394517,-0.077031835047591,-0.16050719194423,0.21618455873618,-0.54693088064852,-0.23786000247078,-0.59803675764093,1.0923008303097,0.17366075046142,0.54290923518083,0.60140644190717,0.05974144182409,-0.10139665145658,-0.15275546046583,}5.1234789449184e-08{-0.18017558513543,-0.18146265689724,0.19828598581944,0.44190756360128,-0.22332667322822,0.30169325630054,0.97082021620136,-0.23322485853026,-0.65912975643021,1.3692117676815,-0.72319483106828,-1.0883591535332,-0.46589031854902,-0.073792583922551,0.36310819165966,-0.0053283265286844,0.47961491373351,1.0974451087232,-0.70320902143542,-0.087953350778685,1.0191600187128,0.17360115911924,0.069900569787577,-0.16813379753614,0.58380508079408,0.059608837989604,-0.73024469728429,0.13274871928125,0.11332417366227,-0.31200221713205,0.23947432231531,1.0454803228932,0.8758172416385,-0.46659133456749,-0.01452242480419,0.48269143866338,-0.1505119234022,-0.53428273563778,1.1124781201795,0.7158579485146,}-1.5923623174481e-07{0.85339968189486,-0.0031680515790833,-0.39202082971167,-0.01225315528781,-0.57344056356219,1.2631862215949,0.047128925306942,-1.4902526401776,-0.090282461185964,0.0051083609777073,0.31153197386897,0.17016429041934,1.659032504245,-0.73128928650677,0.4670939328216,0.028794360062452,-0.835364828446,1.0444326143459,0.32932243316448,0.19423058285795,0.064800248455427,0.44604158652933,-0.88846000046558,0.26087480381279,-0.31110295966076,-0.29340717912116,0.3893207825555,-0.12011290761793,0.74345863790375,0.91991374081139,0.58451763390618,1.0669202255176,0.9151380516102,-0.48160558880747,0.92929454785814,0.28369332396192,0.51683013032091,-0.90813461356797,0.11724769174449,-0.95568308718194,}-2.6915435839416e-06{0.15231248617089,-0.53598711108745,-1.0728578555855,0.36259922426732,0.031027769372601,0.26773876558409,0.64368096063365,-0.25774347079668,-0.54249611885042,-0.37569923896152,1.3102568839229,1.3606470022779,1.315893134815,-1.3041749157242,-0.11526832004411,0.92184110918755,-0.093661224545601,-0.88577712061228,0.63818458911472,-0.26442642654138,-1.1176712678031,0.25360377550678,0.3515439997362,-0.69789425814896,-0.4687938342845,0.82667253233937,0.467816069347,0.44591920582718,0.05545307746697,-0.60233019250446,-0.71215641270195,-0.53751447248309,-0.45065874409576,0.42354298216433,-0.0014788537422028,-0.73425343246317,0.47007202514344,-0.46357977355352,-1.2892936180133,-0.048225560467511,}-2.2203811792948e-07{-0.35923888252987,-0.20438667385787,-0.19124147250491,0.76882231523259,0.60367368248321,-1.0389538006775,-0.61313909750184,0.40870492709999,-0.72515795426014,-1.0689391477852,0.87347072473302,0.91819843344018,-0.20062971447343,0.40036925489807,-0.041060377554657,-0.49109735768139,-0.66679007149362,-0.36921711689963,0.22104603934927,-0.16034076612188,0.14148837206228,0.30385765762427,0.77164356236879,0.84512822072436,0.45189599713861,-0.32517192253332,0.97068735065427,0.93647534203954,0.88377609020537,-0.70700992716569,0.93760202670951,0.059062141340008,0.54097694578813,-0.53362426864334,-0.33198341878765,-0.84667381438854,1.095885343958,0.66440180345932,-0.53341022968168,-0.31280200102565,}-7.7144999220949e-08{0.2099088837233,0.41124969823218,0.26237623960241,0.010632764815006,-0.69550129162016,1.0309324303167,-2.3945268806069,-1.0900830278076,-0.97074897000463,-0.64712273581935,-0.14397363140143,-0.62111675762407,-0.50609306043648,-1.1836989201552,-0.27635932911943,-0.021133962558542,-0.71273397289237,-0.76600974074245,-0.25077719867282,-0.81734393863832,0.47239605660163,-0.66353076564059,0.86867198848571,-0.79615191780073,-0.0022895055875506,0.64980972601548,-0.16107170872416,0.80976610335076,0.94472563914824,-0.53645065120444,0.030698189248155,0.34301072287199,-0.3691108833124,-0.12511525153045,-1.1246609938741,-0.41765170598958,-0.30162418790371,-0.28050202302667,0.84343770289887,0.34903091158625,}8.0352707438157e-08{-0.51405999934921,0.0044459209144511,0.30461398228033,0.95000878369673,0.16155907388394,0.42705049012585,0.65182535858805,0.65344203842455,0.27293328175436,1.1721316374074,-0.034035069744857,-0.43404730540217,-0.68429164676573,-0.32332730912654,0.56993065489951,-0.014621209625948,-0.11099663675097,1.3579581445072,-0.27863263894567,-0.55714914897038,-0.60478575969188,-0.49545399672518,0.71208007180686,0.48439443134997,0.12846042466121,0.55861815908385,1.0799294894551,0.12195062728068,-0.90166846045791,-0.51862481544792,-0.24235415755116,-0.19301095955542,1.1633646789943,0.84032850506353,-0.57698419406506,0.686434184688,0.37527363998036,0.010136967906187,-0.39289912738176,-0.52391641291929,}3.9142267087638e-06{-0.42098484784357,-0.25546825964372,-0.76476298796809,0.8142147066408,1.5127730763427,-0.75631497465614,0.28598238176559,-0.33012846499604,-0.91616485085432,0.81551319574826,0.53773987298677,0.26636333938819,-1.0291460002793,1.1510905341627,0.66077086811555,-1.0384144522199,-0.32567602055811,1.0394917903945,0.77196468624017,0.50600831732912,-0.26120500875638,-0.95893895895136,-0.064147992016425,0.072218774618524,-1.1388010084736,-0.73853337106534,-0.24610589258136,0.02514605332215,0.54960616687421,0.75275549013141,0.67453346700391,-0.60164983523389,0.50611628328965,-0.58695247773995,0.54917372627756,-0.32598410448479,0.57677346537166,0.77028748812782,-0.72799863028805,0.51131434164369,}-9.345162504613e-06{5.293159010446,-0.89468979823207,-5.2575120035085,-1.1118852011227,1.61133844062,3.2848256677548,0.1746561427601,3.4871115367329,-0.44974464033245,-2.588796188171,}|END|
-]=]
-
-local amnesia_nn_net = nil
-local amnesia_nn = {}
-local AMNESIA_NN_ACT = 1
-
-function amnesia_nn.transfer(x)
-	return 1 / (1 + math.exp(-x / AMNESIA_NN_ACT))
-end
-
-function amnesia_nn.create(_numInputs, _numOutputs, _numHiddenLayers, _neuronsPerLayer, _learningRate)
-	_numInputs = _numInputs or 1
-	_numOutputs = _numOutputs or 1
-	_numHiddenLayers = _numHiddenLayers or math.ceil(_numInputs / 2)
-	_neuronsPerLayer = _neuronsPerLayer or math.ceil(_numInputs * .66666 + _numOutputs)
-	_learningRate = _learningRate or .5
-	local network = setmetatable({ learningRate = _learningRate }, { __index = amnesia_nn })
-	network[1] = {}
-	for i = 1, _numInputs do
-		network[1][i] = {}
-	end
-	for i = 2, _numHiddenLayers + 2 do
-		local neuronsInLayer = _neuronsPerLayer
-		if i == _numHiddenLayers + 2 then
-			neuronsInLayer = _numOutputs
-		end
-		network[i] = {}
-		for j = 1, neuronsInLayer do
-			network[i][j] = {}
-			network[i][j].bias = math.random() * 2 - 1
-			local numNeuronInputs = #(network[i - 1])
-			for k = 1, numNeuronInputs do
-				network[i][j][k] = math.random() * 2 - 1
-			end
-		end
-	end
-	return network
-end
-
-function amnesia_nn.forewardPropagate(self, ...)
-	local arg = {...}
-	if #arg ~= #(self[1]) and type(arg[1]) ~= "table" then
-		error("Neural Network input count mismatch", 2)
-	elseif type(arg[1]) == "table" and #arg[1] ~= #(self[1]) then
-		error("Neural Network input count mismatch", 2)
-	end
-	local outputs = {}
-	for i = 1, #(self) do
-		for j = 1, #(self[i]) do
-			if i == 1 then
-				if type(arg[1]) == "table" then
-					self[i][j].result = arg[1][j]
-				else
-					self[i][j].result = arg[j]
-				end
-			else
-				self[i][j].result = self[i][j].bias
-				for k = 1, #(self[i][j]) do
-					self[i][j].result = self[i][j].result + (self[i][j][k] * self[i - 1][k].result)
-				end
-				self[i][j].result = amnesia_nn.transfer(self[i][j].result)
-				if i == #(self) then
-					table.insert(outputs, self[i][j].result)
-				end
-			end
-			self[i][j].active = self[i][j].result > 0.5
-		end
-	end
-	return outputs
-end
-
-function amnesia_nn.load(data)
-	local dataPos = string.find(data, "|") + 1
-	local currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-	dataPos = string.find(data, "|", dataPos) + 1
-	local _inputs, _outputs, _hiddenLayers, _neuronsPerLayer, _learningRate
-	local biasWeights = {}
-	local errorExit = false
-	while currentChunk ~= "END" and not errorExit do
-		if currentChunk == "INFO" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			if currentChunk ~= "FF BP NN" then
-				errorExit = true
-			end
-		elseif currentChunk == "I" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			_inputs = tonumber(currentChunk)
-		elseif currentChunk == "O" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			_outputs = tonumber(currentChunk)
-		elseif currentChunk == "HL" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			_hiddenLayers = tonumber(currentChunk)
-		elseif currentChunk == "NHL" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			_neuronsPerLayer = tonumber(currentChunk)
-		elseif currentChunk == "LR" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			_learningRate = tonumber(currentChunk)
-		elseif currentChunk == "BW" then
-			currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-			dataPos = string.find(data, "|", dataPos) + 1
-			local subPos = 1
-			local subChunk
-			for i = 1, _hiddenLayers + 1 do
-				biasWeights[i] = {}
-				local neuronsInLayer = _neuronsPerLayer
-				if i == _hiddenLayers + 1 then
-					neuronsInLayer = _outputs
-				end
-				for j = 1, neuronsInLayer do
-					biasWeights[i][j] = {}
-					biasWeights[i][j].bias =
-						tonumber(string.sub(currentChunk, subPos, string.find(currentChunk, "{", subPos) - 1))
-					subPos = string.find(currentChunk, "{", subPos) + 1
-					subChunk = string.sub(currentChunk, subPos, string.find(currentChunk, ",", subPos) - 1)
-					local maxPos = string.find(currentChunk, "}", subPos)
-					while subPos < maxPos do
-						table.insert(biasWeights[i][j], tonumber(subChunk))
-						subPos = string.find(currentChunk, ",", subPos) + 1
-						if string.find(currentChunk, ",", subPos) ~= nil then
-							subChunk = string.sub(currentChunk, subPos, string.find(currentChunk, ",", subPos) - 1)
-						end
-					end
-					subPos = maxPos + 1
-				end
-			end
-		end
-		currentChunk = string.sub(data, dataPos, string.find(data, "|", dataPos) - 1)
-		dataPos = string.find(data, "|", dataPos) + 1
-	end
-	if errorExit then
-		error("Failed to load Neural Network", 2)
-	end
-	local network = setmetatable({ learningRate = _learningRate }, { __index = amnesia_nn })
-	network[1] = {}
-	for i = 1, _inputs do
-		network[1][i] = {}
-	end
-	for i = 2, _hiddenLayers + 2 do
-		network[i] = {}
-		local neuronsInLayer = _neuronsPerLayer
-		if i == _hiddenLayers + 2 then
-			neuronsInLayer = _outputs
-		end
-		for j = 1, neuronsInLayer do
-			network[i][j] = { bias = biasWeights[i - 1][j].bias }
-			local numNeuronInputs = #(network[i - 1])
-			for k = 1, numNeuronInputs do
-				network[i][j][k] = biasWeights[i - 1][j][k]
-			end
-		end
-	end
-	return network
-end
-
-local function amnesia_nn_try_load_preset_blob()
-	return AMNESIA_NN_PRESET_STR
-end
-
-pcall(function()
-	local blob = amnesia_nn_try_load_preset_blob()
-	if type(blob) == "string" and #blob > 200 then
-		local ok, net = pcall(amnesia_nn.load, blob)
-		if ok and net then
-			amnesia_nn_net = net
-		end
-	end
-	if not amnesia_nn_net then
-		amnesia_nn_net = amnesia_nn.create(40, 1, 1, 10, 0.3)
-	end
-end)
-
-local AMNESIA_NN_MUL = 1000000000
-local AMNESIA_NN_BIN = 20
-local AMNESIA_NN_PBR_NORM_MAX = 21973819.471897
-
-local function amnesia_nn_normalize(value, minv, maxv)
-	return (value - minv) / (maxv - minv)
-end
-
-local function amnesia_nn_bin_value(value, num_bits)
-	local scale_factor = 2 ^ num_bits
-	local scaled_value = math.floor(value * scale_factor + 0.5)
-	local bits = {}
-	for i = num_bits, 1, -1 do
-		local bit_value = 2 ^ (i - 1)
-		if scaled_value >= bit_value then
-			bits[i] = 1
-			scaled_value = scaled_value - bit_value
-		else
-			bits[i] = 0
-		end
-	end
-	return bits
-end
-
-local function amnesia_nn_insert_first(tbl, value, maxSize)
-	if #tbl >= maxSize then
-		table.remove(tbl)
-	end
-	table.insert(tbl, 1, value)
-end
-
-local function amnesia_nn_average(t)
-	t = t or {}
-	local n = #t
-	if n == 0 then
-		return 0
-	end
-	local sum = 0
-	for _, v in pairs(t) do
-		sum = sum + v
-	end
-	return sum / n
-end
--- #endregion
-
-        local amnesia_nn_buf = { }
-        local amnesia_animlayer_t = ffi.typeof('struct { char pad_0000[24]; uint32_t m_nSequence; float m_flPrevCycle; float m_flWeight; float m_flWeightDeltaRate; float m_flPlaybackRate; float m_flCycle; void *m_pOwner; char pad_0038[4]; } **')
-
-        local function amnesia_get_animation_layer(enemy, layer_idx)
-            if entity.get_animation_layer ~= nil then
-                local ok, layer = pcall(entity.get_animation_layer, enemy, layer_idx)
-
-                if ok and layer ~= nil then
-                    return layer
-                end
-            end
-
-            local ok, pointer = pcall(var_0_32, enemy)
-
-            if not ok or pointer == nil then
-                return nil
-            end
-
-            local ok_layer, layer = pcall(function()
-                local base = ffi.cast('char*', ffi.cast('void***', pointer))
-                local layers = ffi.cast(amnesia_animlayer_t, base + 0x2990)[0]
-
-                if layers == nil then
-                    return nil
-                end
-
-                return layers[layer_idx or 0]
-            end)
-
-            if ok_layer then
-                return layer
-            end
-
-            return nil
-        end
-
-        local function amnesia_reset_enemy(enemy)
-            amnesia_nn_buf[enemy] = nil
-            reset_enemy(enemy)
-        end
-
-        local function apply_amnesia_resolver(enemy)
-            if not entity.is_alive(enemy) or entity.is_dormant(enemy) or amnesia_nn_net == nil then
-                amnesia_reset_enemy(enemy)
-                return
-            end
-
-            local layer = amnesia_get_animation_layer(enemy, 6)
-
-            if layer == nil then
-                amnesia_reset_enemy(enemy)
-                return
-            end
-
-            local playback_rate = tonumber(layer.m_flPlaybackRate or layer.playback_rate) or 0
-            playback_rate = playback_rate * AMNESIA_NN_MUL
-
-            amnesia_nn_buf[enemy] = amnesia_nn_buf[enemy] or { samples = { } }
-            local buf = amnesia_nn_buf[enemy]
-            amnesia_nn_insert_first(buf.samples, playback_rate, 18)
-
-            local vx, vy = entity.get_prop(enemy, 'm_vecVelocity')
-            vx, vy = tonumber(vx) or 0, tonumber(vy) or 0
-
-            local vel2d = math.sqrt(vx * vx + vy * vy)
-            local vel_n = utils.clamp(amnesia_nn_normalize(vel2d, 0, 260), 0, 1)
-            local pbr_n = utils.clamp(amnesia_nn_normalize(amnesia_nn_average(buf.samples), 0, AMNESIA_NN_PBR_NORM_MAX), 0, 1)
-
-            local bin_pbr = amnesia_nn_bin_value(pbr_n, AMNESIA_NN_BIN)
-            local bin_vel = amnesia_nn_bin_value(vel_n, AMNESIA_NN_BIN)
-            local input = { }
-
-            for i = 1, #bin_pbr do
-                input[#input + 1] = bin_pbr[i]
-            end
-
-            for i = 1, #bin_vel do
-                input[#input + 1] = bin_vel[i]
-            end
-
-            local ok, out = pcall(function()
-                return amnesia_nn_net:forewardPropagate(input)
-            end)
-            local forward = ok and out and out[1] or nil
-
-            if forward == nil then
-                amnesia_reset_enemy(enemy)
-                return
-            end
-
-            local yaw_value = forward < 0.5 and -60 or 60
-
-            pcall(plist.set, enemy, 'Force body yaw value', yaw_value)
-            pcall(plist.set, enemy, 'Force body yaw', true)
-            pcall(plist.set, enemy, 'Correction active', true)
-
-            state.debug.side_names[enemy] = yaw_value < 0 and 'amnesia left' or 'amnesia right'
-            state.debug.deltas[enemy] = yaw_value
-        end
-
-        local lyrics_state = {
-            miss_count = { },
-            hit_count = { },
-            current_brute_index = { },
-            last_lby = { },
-            brute_angles = {
-                0, 45, -45, 90, -90, 135, -135, 180,
-                30, -30, 60, -60, 120, -120, 150, -150,
-                22.5, -22.5, 67.5, -67.5, 112.5, -112.5, 157.5, -157.5
-            },
-            patterns = {
-                fake_side = { 60, -60, 120, -120 },
-                jitter = { 45, -45, 45, -45, 90, -90 },
-                static = { 180, 180, 180, 180 },
-                dynamic = { 30, -30, 60, -60, 90, -90, 120, -120 },
-                rage = { 0, 180, 0, 180, 90, -90 },
-                legit = { 15, -15, 30, -30, 45, -45 },
-                spin = { 360, 360, 360, 360 }
-            }
-        }
-
-        local function lyrics_detect_pattern(enemy, current_yaw)
-            if not ref.lyrics_desync_detector:get() then
-                return nil
-            end
-
-            local lby = entity.get_prop(enemy, 'm_flLowerBodyYawTarget')
-
-            if lby == nil then
-                return nil
-            end
-
-            local previous_lby = lyrics_state.last_lby[enemy] or lby
-            lyrics_state.last_lby[enemy] = lby
-
-            local delta = math.abs(normalize_yaw(current_yaw - lby))
-            local delta_change = math.abs(normalize_yaw(lby - previous_lby))
-
-            if delta_change > 100 then
-                return 'spin'
-            elseif delta > 100 and delta < 180 then
-                return 'rage'
-            elseif delta > 30 and delta < 100 then
-                return 'dynamic'
-            elseif delta > 10 and delta <= 30 then
-                return 'jitter'
-            elseif delta <= 10 then
-                return 'static'
-            end
-
-            return nil
-        end
-
-        local function lyrics_get_angle(enemy, original_yaw)
-            local mode = ref.lyrics_mode:get()
-            local lby = entity.get_prop(enemy, 'm_flLowerBodyYawTarget')
-            local miss_count = lyrics_state.miss_count[enemy] or 0
-            local hit_count = lyrics_state.hit_count[enemy] or 0
-            local total = math.max(hit_count + miss_count, 1)
-            local hit_chance = hit_count / total
-            local jitter = ref.lyrics_jitter_correction:get() / 100
-            local precision = ref.lyrics_angle_precision:get() / 100
-            local miss_threshold = ref.lyrics_miss_threshold:get()
-            local brute_speed = ref.lyrics_brute_speed:get()
-            local desync_range = ref.lyrics_desync_range:get()
-            local angle = original_yaw + 180
-
-            if mode == 'Smart detection' then
-                if lby ~= nil and ref.lyrics_lby_breaker:get() then
-                    local delta = math.abs(normalize_yaw(original_yaw - lby))
-
-                    if delta > desync_range then
-                        angle = lby + 180
-                    elseif delta > 50 then
-                        angle = lby + 120
-                    elseif delta > 30 then
-                        angle = lby + 90
-                    elseif delta > 10 then
-                        angle = lby + 60
-                    else
-                        angle = lby - 60
-                    end
-                end
-            elseif mode == 'Bruteforce PRO' then
-                local brute_index = lyrics_state.current_brute_index[enemy] or 1
-                local step = math.max(1, math.floor(brute_speed))
-
-                if miss_count > miss_threshold then
-                    step = step * 2
-                end
-
-                brute_index = (brute_index + step) % #lyrics_state.brute_angles + 1
-                lyrics_state.current_brute_index[enemy] = brute_index
-                angle = original_yaw + lyrics_state.brute_angles[brute_index]
-
-                if miss_count > 0 and ref.lyrics_miss_adapt:get() then
-                    angle = angle + lyrics_state.brute_angles[brute_index] * miss_count * 0.1
-                end
-            elseif mode == 'AI adaptation' then
-                angle = original_yaw + 180 + math.sin(globals.realtime() * (2 + miss_count * 0.3)) * ((1 - hit_chance) * 250)
-
-                if lby ~= nil and ref.lyrics_lby_breaker:get() then
-                    angle = angle + normalize_yaw(lby - original_yaw) * 0.6
-                end
-            elseif mode == 'Rage mode' then
-                angle = original_yaw + 180 + math.sin(globals.realtime() * 5) * 90 + math.random(-30, 30)
-
-                if miss_count > 0 and miss_count % 2 == 0 then
-                    angle = original_yaw - normalize_yaw(angle - original_yaw)
-                end
-            elseif mode == 'Extreme bruteforce' then
-                local angle_index = math.floor(globals.realtime() * brute_speed * 10) % #lyrics_state.brute_angles + 1
-                angle = original_yaw + lyrics_state.brute_angles[angle_index]
-
-                if miss_count > miss_threshold then
-                    angle = angle + math.random(-45, 45)
-                end
-            else
-                if miss_count > miss_threshold then
-                    local brute_index = lyrics_state.current_brute_index[enemy] or 1
-                    brute_index = brute_index % #lyrics_state.brute_angles + 1
-                    lyrics_state.current_brute_index[enemy] = brute_index
-                    angle = original_yaw + lyrics_state.brute_angles[brute_index]
-                elseif lby ~= nil and ref.lyrics_lby_breaker:get() then
-                    angle = lby + 180
-                end
-            end
-
-            if ref.lyrics_prediction_boost:get() then
-                angle = angle + math.sin(globals.realtime() * (5 + miss_count * 0.35)) * (45 + (1 - hit_chance) * 55) * jitter
-            end
-
-            local pattern = lyrics_detect_pattern(enemy, original_yaw)
-            local pattern_values = pattern and lyrics_state.patterns[pattern] or nil
-
-            if pattern_values ~= nil then
-                local pattern_index = math.floor(globals.realtime() * 3) % #pattern_values + 1
-                angle = angle + pattern_values[pattern_index]
-            end
-
-            return utils.clamp(normalize_yaw(angle - original_yaw) * precision, -60, 60)
-        end
-
-        local function apply_lyrics_resolver(enemy)
-            if not entity.is_alive(enemy) or entity.is_dormant(enemy) then
-                reset_enemy(enemy)
-                return
-            end
-
-            local yaw = get_yaw(enemy)
-            local body_yaw = lyrics_get_angle(enemy, yaw)
-
-            remember_resolver_yaw(enemy, body_yaw)
-            pcall(plist.set, enemy, 'Force body yaw', true)
-            pcall(plist.set, enemy, 'Force body yaw value', body_yaw)
-            pcall(plist.set, enemy, 'Correction active', true)
-
-            state.debug.side_names[enemy] = body_yaw < 0 and 'lyrics left' or body_yaw > 0 and 'lyrics right' or 'lyrics center'
-            state.debug.deltas[enemy] = body_yaw
-        end
-
-        local function lyrics_on_aim_hit(e)
-            if e.target == nil then
-                return
-            end
-
-            lyrics_state.hit_count[e.target] = (lyrics_state.hit_count[e.target] or 0) + 1
-            lyrics_state.miss_count[e.target] = math.max(0, (lyrics_state.miss_count[e.target] or 0) - 1)
-        end
-
-        local function lyrics_on_aim_miss(e)
-            if e.target == nil or e.reason ~= '?' then
-                return
-            end
-
-            lyrics_state.miss_count[e.target] = (lyrics_state.miss_count[e.target] or 0) + 1
-
-            if ref.lyrics_anti_bruteforce:get() then
-                lyrics_state.current_brute_index[e.target] = ((lyrics_state.current_brute_index[e.target] or 1) % #lyrics_state.brute_angles) + 1
-            end
-        end
+        -- Resolver strategies: Cryonova and Sauron.
 
         local ok_resolver_weapons, resolver_weapons_db = pcall(require, 'gamesense/csgo_weapons')
         if not ok_resolver_weapons then
@@ -20018,95 +19452,6 @@ end
                 and player.stage == 'slow'
         end)
 
-        local function update_astra_record(enemy)
-            state.astra[enemy] = state.astra[enemy] or create_astra_record()
-
-            local record = state.astra[enemy]
-            local sim_time = entity.get_prop(enemy, 'm_flSimulationTime') or 0
-            local tickbase = entity.get_prop(enemy, 'm_nTickBase') or 0
-            local rx, ry, rz = entity.get_prop(enemy, 'm_angRotation')
-            local ex, ey, ez = entity.get_prop(enemy, 'm_angEyeAngles')
-
-            record.server_time = tickbase * globals.tickinterval()
-            record.old_simtime = record.simtime
-            record.simtime = sim_time
-            record.is_simtime_update = record.simtime ~= record.old_simtime
-
-            if record.is_simtime_update then
-                record.fakelag_ticks = record.choked_ticks
-                record.choked_ticks = 0
-
-                record.prev_eye_yaw = record.eye_angles.y
-                record.eye_angles = vector(ex or 0, ey or 0, ez or 0)
-
-                record.prev_rotation = record.rotation.y
-                record.rotation = vector(rx or 0, ry or 0, rz or 0)
-
-                record.prev_delta = record.delta
-                record.delta = normalize_yaw(record.eye_angles.y - record.prev_eye_yaw)
-
-                record.is_prev_jittering = record.is_jittering
-                record.is_jittering = (
-                    record.delta > 0 and record.prev_delta < 0
-                ) or (
-                    record.delta < 0 and record.prev_delta > 0
-                )
-            else
-                record.choked_ticks = record.choked_ticks + 1
-            end
-        end
-
-        local function apply_astra_resolver(enemy)
-            update_astra_record(enemy)
-
-            local record = state.astra[enemy]
-
-            if record == nil then
-                reset_enemy(enemy)
-                return
-            end
-
-            local jitter_side = record.delta > 0 and 1 or -1
-            local server_tick = time_to_ticks(record.server_time)
-            local latency_tick = time_to_ticks(get_latency())
-            local arrival_tick = server_tick + latency_tick + 1
-            local current_tick = arrival_tick - server_tick - 1
-            local ticks_to_predict = math.min(
-                math.max(arrival_tick - current_tick, 0) + (globals.tickcount() - server_tick),
-                8
-            )
-
-            for tick = 1, ticks_to_predict do
-                jitter_side = -jitter_side
-            end
-
-            local body_yaw = (
-                normalize_yaw(record.eye_angles.y) - normalize_yaw(record.prev_eye_yaw)
-            ) * jitter_side
-
-            local jitter_fix = false
-
-            if record.is_prev_jittering and record.is_jittering then
-                local abs_body_yaw = math.abs(body_yaw)
-                jitter_fix = abs_body_yaw > 8 and abs_body_yaw < 64
-            end
-
-            pcall(plist.set, enemy, 'Force body yaw', jitter_fix)
-            pcall(plist.set, enemy, 'Force body yaw value', utils.clamp(body_yaw, -60, 60))
-
-            if jitter_fix then
-                state.debug.side_names[enemy] = body_yaw > 0 and 'right' or 'left'
-                state.debug.deltas[enemy] = body_yaw
-            else
-                local yaw = get_yaw(enemy)
-                local _, _, _, speed = get_velocity(enemy)
-                local side_name, delta = estimate_debug_side(enemy, yaw, speed)
-
-                state.debug.side_names[enemy] = side_name
-                state.debug.deltas[enemy] = delta
-            end
-        end
-
         local function apply_cryonova_resolver(enemy)
             local misses = state.misses[enemy] or 0
             local side = misses == 1 and -1 or misses == 2 and 1 or 0
@@ -20133,48 +19478,6 @@ end
             20,
             -20
         }
-
-        local function apply_bruteforce_resolver(enemy)
-            if not entity.is_alive(enemy) or entity.is_dormant(enemy) then
-                reset_enemy(enemy)
-                return
-            end
-
-            local cycle = state.bruteforce_cycle[enemy] or 0
-            local _, _, _, speed = get_velocity(enemy)
-            local pose_delta = ((entity.get_prop(enemy, 'm_flPoseParameter', 11) or 0.5) * 120) - 60
-            local candidates = { }
-
-            for i = 1, #bruteforce_angles do
-                candidates[i] = bruteforce_angles[i]
-            end
-
-            if math.abs(pose_delta) > 12 then
-                table.insert(candidates, 1, utils.clamp(-pose_delta, -58, 58))
-            end
-
-            if speed > 120 then
-                table.insert(candidates, 1, utils.clamp(pose_delta, -45, 45))
-            end
-
-            local body_yaw, index = choose_memory_yaw(enemy, candidates, cycle)
-
-            state.side[enemy] = body_yaw < 0 and -1 or body_yaw > 0 and 1 or 0
-            state.debug.side_names[enemy] = index == 'learned' and 'brute learned' or 'brute ' .. tostring(index)
-            state.debug.deltas[enemy] = body_yaw
-
-            if body_yaw == 0 then
-                pcall(plist.set, enemy, 'Force body yaw', false)
-                pcall(plist.set, enemy, 'Force body yaw value', 0)
-                pcall(plist.set, enemy, 'Correction active', false)
-                return
-            end
-
-            remember_resolver_yaw(enemy, body_yaw)
-            pcall(plist.set, enemy, 'Force body yaw', true)
-            pcall(plist.set, enemy, 'Force body yaw value', body_yaw)
-            pcall(plist.set, enemy, 'Correction active', true)
-        end
 
         local function score_debug_target(enemy, eye_x, eye_y, eye_z, view_pitch, view_yaw)
             local x, y, z = get_origin(enemy)
@@ -20424,7 +19727,6 @@ end
                         reset_enemy(enemy)
                     end
 
-                    amnesia_nn_buf = { }
                     sauron_reset(false)
                     state.resolver_mode = nil
                     state.resolver_active = false
@@ -20437,27 +19739,22 @@ end
 
             local mode = ref.mode:get()
 
+            if mode ~= 'Sauron' then
+                mode = 'Cryonova'
+            end
+
             if state.resolver_mode ~= mode then
                 for _, enemy in ipairs(enemies) do
                     reset_enemy(enemy)
                 end
 
-                amnesia_nn_buf = { }
                 sauron_reset(false)
                 state.resolver_mode = mode
             end
 
             for _, enemy in ipairs(enemies) do
-                if mode == 'Astra' then
-                    apply_astra_resolver(enemy)
-                elseif mode == 'Amnesia' then
-                    apply_amnesia_resolver(enemy)
-                elseif mode == 'Lyrics' then
-                    apply_lyrics_resolver(enemy)
-                elseif mode == 'Sauron' then
+                if mode == 'Sauron' then
                     apply_sauron_resolver(enemy)
-                elseif mode == 'Bruteforce' then
-                    apply_bruteforce_resolver(enemy)
                 else
                     apply_cryonova_resolver(enemy)
                 end
@@ -20564,9 +19861,7 @@ end
         local function on_aim_hit(e)
             local resolver_mode = ref.mode:get()
 
-            if ref.enabled:get() and resolver_mode == 'Lyrics' then
-                lyrics_on_aim_hit(e)
-            elseif ref.enabled:get() and resolver_mode == 'Sauron' then
+            if ref.enabled:get() and resolver_mode == 'Sauron' then
                 sauron_on_aim_hit(e)
             end
 
@@ -20594,9 +19889,7 @@ end
         local function on_aim_miss(e)
             local resolver_mode = ref.mode:get()
 
-            if ref.enabled:get() and resolver_mode == 'Lyrics' then
-                lyrics_on_aim_miss(e)
-            elseif ref.enabled:get() and resolver_mode == 'Sauron' then
+            if ref.enabled:get() and resolver_mode == 'Sauron' then
                 sauron_on_aim_miss(e)
             end
 
@@ -20819,7 +20112,9 @@ end
         end
 
         local function on_round_prestart()
-            client.delay_call(client.latency() + totime(8), process_buy)
+            process_buy()
+            client.delay_call(totime(1), process_buy)
+            client.delay_call(client.latency() + totime(3), process_buy)
         end
 
         local callbacks do
@@ -27287,12 +26582,30 @@ local render do
                 return new_damage
             end
 
+            local font_flags = {
+                ['Default'] = 'c',
+                ['Small'] = 'c-',
+                ['Bold'] = 'cb'
+            }
+
             local function draw_hitbox_mark(x, y, alpha, lethal)
                 if x == nil or y == nil or alpha <= 0 then
                     return
                 end
 
                 renderer.text(x, y, 253, 69, 106, alpha, 'cbd', 0, lethal and '+' or ' ')
+            end
+
+            local function draw_classic_damage(x, y, damage, lethal)
+                local r, g, b, a
+
+                if lethal then
+                    r, g, b, a = ref.active_color:get()
+                else
+                    r, g, b, a = ref.inactive_color:get()
+                end
+
+                renderer.text(x, y, r, g, b, a, font_flags[ref.font:get()] or 'c', 0, math.floor(damage))
             end
 
             local function on_paint()
@@ -27303,7 +26616,8 @@ local render do
                 end
 
                 local enemies = entity.get_players(true)
-                local alpha = { selected_hitbox_alpha() }
+                local is_solus_style = ref.style:get() == 'Solus'
+                local alpha = is_solus_style and { selected_hitbox_alpha() } or { 0, 0, 0, 0 }
                 local enemy_target_idx = client.current_threat()
 
                 for i = 1, #enemies do
@@ -27335,22 +26649,27 @@ local render do
 
                         if x1 ~= nil and mult ~= nil and mult > 0 then
                             local x = x1 + ((x2 - x1) / 2)
-                            local y = y1 - 17
-                            local text_r = is_damage_lethal and 253 or 255
-                            local text_g = is_damage_lethal and 69 or 255
-                            local text_b = is_damage_lethal and 106 or 255
+                            local y = y1 - (is_solus_style and 17 or ref.offset:get())
 
-                            renderer.text(x, y, text_r, text_g, text_b, 255, 'cb', 0, math.floor(display_damage))
+                            if is_solus_style then
+                                local text_r = is_damage_lethal and 253 or 255
+                                local text_g = is_damage_lethal and 69 or 255
+                                local text_b = is_damage_lethal and 106 or 255
 
-                            draw_hitbox_mark(pelvis_x, pelvis_y, alpha[4], is_lethal_pelvis)
-                            draw_hitbox_mark(leg_x, leg_y, alpha[4], is_lethal_pelvis)
-                            draw_hitbox_mark(stomach_x, stomach_y, alpha[3], is_lethal_stomach)
-                            draw_hitbox_mark(chest_x, chest_y, alpha[2], is_lethal_chest)
-                            draw_hitbox_mark(head_x, head_y, alpha[1], is_lethal_head)
+                                renderer.text(x, y, text_r, text_g, text_b, 255, 'cb', 0, math.floor(display_damage))
 
-                            if enemy == enemy_target_idx then
-                                renderer.text(x + 12, y, 255, 255, 255, 255, 'cbd', 0, '-')
-                                renderer.text(x - 12, y, 255, 255, 255, 255, 'cbd', 0, '-')
+                                draw_hitbox_mark(pelvis_x, pelvis_y, alpha[4], is_lethal_pelvis)
+                                draw_hitbox_mark(leg_x, leg_y, alpha[4], is_lethal_pelvis)
+                                draw_hitbox_mark(stomach_x, stomach_y, alpha[3], is_lethal_stomach)
+                                draw_hitbox_mark(chest_x, chest_y, alpha[2], is_lethal_chest)
+                                draw_hitbox_mark(head_x, head_y, alpha[1], is_lethal_head)
+
+                                if enemy == enemy_target_idx then
+                                    renderer.text(x + 12, y, 255, 255, 255, 255, 'cbd', 0, '-')
+                                    renderer.text(x - 12, y, 255, 255, 255, 255, 'cbd', 0, '-')
+                                end
+                            else
+                                draw_classic_damage(x, y, display_damage, is_damage_lethal)
                             end
                         end
                     end
@@ -34860,3 +34179,4 @@ end)
         client.error_log('[cryonova] grenade helper failed: ' .. tostring(err))
     end
 end
+-- CRYONOVA GRENADE HELPER V3 END
