@@ -342,7 +342,11 @@ local js = panorama.loadstring([[
 							scoreboard_el_parent.FindChildTraverse("id-sb-skillgroup-image").style.margin = "0px 0px 0px 5px"
 						}
 
-						scoreboard_el_parent.MoveChildBefore(custom_weapons, scoreboard_el_parent.GetChild(1))
+						if(scoreboard_el_parent.MoveChildAfter) {
+							scoreboard_el_parent.MoveChildAfter(custom_weapons, scoreboard_el)
+						} else if(scoreboard_el_parent.GetChildCount && scoreboard_el_parent.GetChildCount() > 0) {
+							scoreboard_el_parent.MoveChildBefore(custom_weapons, scoreboard_el_parent.GetChild(scoreboard_el_parent.GetChildCount() - 1))
+						}
 
 						// create child panels
 						let panel_armor = $.CreatePanel("Image", custom_weapons, "armor", {
@@ -481,7 +485,7 @@ local js = panorama.loadstring([[
 			entindex = parseInt(entindex)
 			let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
 
-			if(!entity_data[entindex].applied || entity_panels[xuid] == null || !entity_panels[xuid].IsValid()) {
+			if(!entity_data[entindex].applied || entity_panels[xuid] == null) {
 				if(_ApplyPlayer.apply(null, entity_data[entindex])) {
 					// $.Msg("successfully appied for ", entindex)
 					entity_data[entindex].applied = true
@@ -642,41 +646,40 @@ local cryonova_scoreboard_user_ids = {
 	['76561199813588346'] = true,
 }
 
-local cryonova_scoreboard_icon_path = 'file://{images}/icons/cryonova/cryonova_mark.png'
+local cryonova_scoreboard_icon_path = 'file://{images}/icons/cryonova/cryonova_mark_64.png'
+local cryonova_scoreboard_game_state = panorama.open().GameStateAPI
 
 local cryonova_user_mark_js = panorama.loadstring([[
 	let entity_panels = {}
 	let entity_data = {}
 	let event_callbacks = {}
 
-	let SLOT_LAYOUT = `
-		<root>
-			<Panel style="min-width: 3px; padding-top: 2px; padding-left: 0px;" scaling='stretch-to-fit-y-preserve-aspect'>
-				<Image id="image" textureheight="21" style="opacity: 0.01; transition: opacity 0.1s ease-in-out 0.0s, img-shadow 0.12s ease-in-out 0.0s; padding: 3px 5px; margin: -3px -5px; margin-top: -5px;" />
-			</Panel>
-		</root>
-	`
-
 	let _DestroyEntityPanel = function(key) {
 		let panel = entity_panels[key]
+		let targets = Array.isArray(panel) ? panel : [panel]
 
-		if(panel != null && panel.IsValid()) {
-			let parent = panel.GetParent()
+		targets.forEach(function(target) {
+			if(target != null && target.IsValid()) {
+				if(target.id && target.id.indexOf("cryonova-scoreboard-mark") === 0) {
+					let parent = target.GetParent()
 
-			if(parent != null && parent.IsValid()) {
-				let original_rank = parent.GetChild(0)
+					if(parent != null && parent.IsValid()) {
+						parent.Children().forEach(function(child) {
+							if(child != null && child.IsValid() && child !== target && child.BHasClass && child.BHasClass("cryonova-scoreboard-hidden-original")) {
+								child.RemoveClass("cryonova-scoreboard-hidden-original")
+								child.visible = true
+								child.style.opacity = "1"
+							}
+						})
+					}
 
-				if(original_rank != null) {
-					original_rank.visible = true
-				}
-
-				if(parent.FindChildTraverse("id-sb-skillgroup-image") != null) {
-					parent.FindChildTraverse("id-sb-skillgroup-image").style.margin = "0px 0px 0px 0px"
+					target.DeleteAsync(0.0)
+				} else {
+					target.visible = true
+					target.style.opacity = "1"
 				}
 			}
-
-			panel.DeleteAsync(0.0)
-		}
+		})
 
 		delete entity_panels[key]
 	}
@@ -687,67 +690,113 @@ local cryonova_user_mark_js = panorama.loadstring([[
 		}
 	}
 
+	let _FindScoreboard = function() {
+		let root = $.GetContextPanel()
+		let container = root.FindChildTraverse("ScoreboardContainer") || root.FindChildTraverse("id-eom-scoreboard-container")
+
+		if(container == null) {
+			return null
+		}
+
+		return container.FindChildTraverse("Scoreboard")
+	}
+
 	let _GetOrCreateCustomPanel = function(xuid) {
-		if(entity_panels[xuid] == null || !entity_panels[xuid].IsValid()) {
+		if(true) {
 			entity_panels[xuid] = null
 
-			let root = $.GetContextPanel()
-			let container = root.FindChildTraverse("ScoreboardContainer") || root.FindChildTraverse("id-eom-scoreboard-container")
+			let scoreboard = _FindScoreboard()
 
-			if(container == null) {
+			if(scoreboard == null) {
 				_Clear()
 				_DestroyEntityPanels()
-
-				return
+				return null
 			}
 
-			let scoreboard_context_panel = container.FindChildTraverse("Scoreboard")
+			scoreboard.FindChildrenWithClassTraverse("sb-row").forEach(function(row) {
+				if(row.m_xuid != xuid) {
+					return
+				}
 
-			if(scoreboard_context_panel == null) {
-				return
-			}
+				let targets = []
 
-			scoreboard_context_panel.FindChildrenWithClassTraverse("sb-row").forEach(function(el) {
-				let scoreboard_el
+				let ping_index = -1
+				let fallback_frame = null
+				let mark_id = "cryonova-scoreboard-mark-" + xuid
 
-				if(el.m_xuid == xuid) {
-					el.Children().forEach(function(child_frame) {
-						if(child_frame.GetAttributeString("data-stat", "") == "rank") {
-							scoreboard_el = child_frame.GetChild(0)
-						}
-					})
+				row.FindChildrenWithClassTraverse("cryonova-scoreboard-mark").forEach(function(old_mark) {
+					if(old_mark != null && old_mark.IsValid() && old_mark.id != mark_id) {
+						old_mark.DeleteAsync(0.0)
+					}
+				})
 
-					if(scoreboard_el) {
-						let scoreboard_el_parent = scoreboard_el.GetParent()
-						let custom_icons = scoreboard_el_parent.FindChildTraverse("cryonova-user-icon")
+				row.FindChildrenWithClassTraverse("cryonova-scoreboard-slot").forEach(function(old_slot) {
+					if(old_slot != null && old_slot.IsValid()) {
+						old_slot.DeleteAsync(0.0)
+					}
+				})
 
-						if(custom_icons == null) {
-							custom_icons = $.CreatePanel("Panel", scoreboard_el_parent, "cryonova-user-icon", {})
+				for(let i = 0; i < row.GetChildCount(); i++) {
+					let child_frame = row.GetChild(i)
+					let stat = child_frame.GetAttributeString("data-stat", "")
 
-							let skillgroup = scoreboard_el_parent.FindChildTraverse("id-sb-skillgroup-image")
-							if(skillgroup != null) {
-								skillgroup.style.margin = "0px 0px 0px 0px"
-							}
+					if(stat == "ping" || stat == "latency") {
+						ping_index = i
+					} else if(stat == "name") {
+						fallback_frame = child_frame
+					}
 
-							let anchor = scoreboard_el_parent.GetChild(1)
-							if(anchor != null) {
-								scoreboard_el_parent.MoveChildAfter(custom_icons, anchor)
-							}
+					let misplaced_mark = child_frame.FindChildTraverse(mark_id)
 
-							let original_rank = scoreboard_el_parent.GetChild(0)
-							if(original_rank != null) {
-								original_rank.visible = false
-							}
-
-							let panel_slot_parent = $.CreatePanel("Panel", custom_icons, "icon")
-							panel_slot_parent.visible = false
-							panel_slot_parent.BLoadLayoutFromString(SLOT_LAYOUT, false, false)
-						}
-
-						entity_panels[xuid] = custom_icons
-						return custom_icons
+					if(misplaced_mark != null && misplaced_mark.IsValid() && misplaced_mark.GetParent() === row) {
+						misplaced_mark.DeleteAsync(0.0)
 					}
 				}
+
+				let mark_parent = null
+
+				if(ping_index >= 0 && ping_index + 1 < row.GetChildCount()) {
+					mark_parent = row.GetChild(ping_index + 1)
+				}
+
+				if(mark_parent == null || !mark_parent.IsValid()) {
+					mark_parent = fallback_frame != null && fallback_frame.IsValid() ? fallback_frame : row
+				}
+
+				let mark = mark_parent.FindChildTraverse(mark_id)
+
+				if(mark == null || !mark.IsValid()) {
+					mark = $.CreatePanel("Image", mark_parent, mark_id)
+					mark.AddClass("cryonova-scoreboard-mark")
+					mark.style.width = "14px"
+					mark.style.height = "14px"
+					mark.style.minWidth = "14px"
+					mark.style.maxWidth = "14px"
+					mark.style.margin = "0px"
+					mark.style.horizontalAlign = "center"
+					mark.style.verticalAlign = "center"
+					mark.style.overflow = "noclip"
+				}
+
+				mark_parent.Children().forEach(function(child) {
+					if(child != null && child.IsValid() && child !== mark) {
+						child.AddClass("cryonova-scoreboard-hidden-original")
+						child.style.opacity = "0"
+					}
+				})
+
+				mark.style.backgroundColor = "#00000000"
+				mark.style.border = "0px solid #00000000"
+				mark.style.boxShadow = "none"
+
+				targets.push(mark)
+
+				if(targets.length < 1) {
+					return
+				}
+
+
+				entity_panels[xuid] = targets
 			})
 		}
 
@@ -776,20 +825,46 @@ local cryonova_user_mark_js = panorama.loadstring([[
 	}
 
 	let _ApplyPlayer = function(entindex) {
-		let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
-		let panel = _GetOrCreateCustomPanel(xuid)
+		let data = entity_data[entindex]
 
-		if(panel == null) {
+		if(data == null) {
 			return false
 		}
 
-		let panel_slot_parent = panel.FindChild("icon")
-		panel_slot_parent.visible = true
+		let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
+		let panel = _GetOrCreateCustomPanel(xuid)
 
-		let panel_slot = panel_slot_parent.FindChild("image")
-		panel_slot.visible = true
-		panel_slot.style.opacity = "1"
-		panel_slot.SetImage(entity_data[entindex].image_path)
+		let targets = Array.isArray(panel) ? panel : [panel]
+
+		if(panel == null || targets.length < 1) {
+			return false
+		}
+
+		targets.forEach(function(target) {
+			if(target == null || !target.IsValid()) {
+				return
+			}
+
+			let parent = target.GetParent()
+
+			if(parent != null && parent.IsValid()) {
+				let debug_label = parent.FindChildTraverse("cryonova-debug-label")
+
+				if(debug_label != null && debug_label.IsValid()) {
+					debug_label.DeleteAsync(0.0)
+				}
+			}
+
+			let image = target.FindChildTraverse("image") || target
+			target.visible = true
+			target.style.opacity = "1"
+			target.RemoveClass("hidden")
+			image.visible = true
+			image.style.opacity = "1"
+			image.style.washColorFast = "#ffffffff"
+			image.RemoveClass("hidden")
+			image.SetImage(data.image_path)
+		})
 
 		return true
 	}
@@ -800,7 +875,7 @@ local cryonova_user_mark_js = panorama.loadstring([[
 
 			let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
 
-			if(!entity_data[entindex].applied || entity_panels[xuid] == null || !entity_panels[xuid].IsValid()) {
+			if(!entity_data[entindex].applied || entity_panels[xuid] == null) {
 				if(_ApplyPlayer(entindex)) {
 					entity_data[entindex].applied = true
 				}
@@ -854,7 +929,7 @@ local function is_cryonova_scoreboard_user(player)
 	end
 
 	local ok, xuid = pcall(function()
-		return GameStateAPI.GetPlayerXuidStringFromEntIndex(player)
+		return cryonova_scoreboard_game_state.GetPlayerXuidStringFromEntIndex(player)
 	end)
 
 	if not ok then
@@ -867,6 +942,12 @@ local function is_cryonova_scoreboard_user(player)
 end
 
 local function update_cryonova_scoreboard_marks()
+	local local_player = entity.get_local_player()
+
+	if local_player ~= nil then
+		cryonova_user_mark_js.update(local_player, cryonova_scoreboard_icon_path)
+	end
+
 	for player = 1, 64 do
 		if entity.get_classname(player) == 'CCSPlayer' then
 			if is_cryonova_scoreboard_user(player) then
@@ -878,6 +959,10 @@ local function update_cryonova_scoreboard_marks()
 	end
 
 	cryonova_user_mark_js.apply()
+
+	client.delay_call(0.01, function()
+		cryonova_user_mark_js.apply()
+	end)
 end
 
 cryonova_user_mark_js.create()
@@ -888,7 +973,6 @@ end)
 client.set_event_callback('shutdown', function()
 	cryonova_user_mark_js.destroy()
 end)
-
 --
 -- logic for sorting weapons
 --
@@ -4869,14 +4953,14 @@ rkJggg==
         end
 
         if cryonova_assets.mark == nil then
-            cryonova_assets.mark = load_embedded_png('mark')
+            cryonova_assets.mark = load_png({
+                local_png_paths.mark,
+                'cryonova_mark.png',
+                'cryonova_mark'
+            })
 
             if cryonova_assets.mark == false then
-                cryonova_assets.mark = load_png({
-                    local_png_paths.mark,
-                    'cryonova_mark.png',
-                    'cryonova_mark'
-                })
+                cryonova_assets.mark = load_embedded_png('mark')
             end
 
             if cryonova_assets.mark == false then
@@ -17576,6 +17660,11 @@ local main do
                 return nil
             end
 
+            local function is_known_cryonova_xuid(xuid)
+                xuid = normalize_cryonova_scoreboard_xuid(tostring(xuid or ''))
+                return xuid ~= nil and cryonova_scoreboard_user_ids[xuid] == true
+            end
+
             local function call_game_state(name, ...)
                 local fn = game_state_api[name]
 
@@ -17618,11 +17707,11 @@ local main do
             end
 
             local function is_cryonova_user(player)
-                if not ref.enabled:get() or player == entity.get_local_player() then
+                if not ref.enabled:get() then
                     return false
                 end
 
-                return detected[player] == true
+                return player == entity.get_local_player() or detected[player] == true
             end
 
             local function update_detected_users()
@@ -17643,13 +17732,14 @@ local main do
                 last_scan = now
 
                 local active = { }
-                local players = entity.get_players(true)
+                local players = entity.get_players(false)
 
                 for i = 1, #players do
                     local player = players[i]
+                    local xuid = get_player_xuid(player)
 
                     active[player] = true
-                    detected[player] = contains_token(get_player_clantag(player))
+                    detected[player] = is_known_cryonova_xuid(xuid) or contains_token(get_player_clantag(player))
                 end
 
                 for player in pairs(detected) do
@@ -17683,6 +17773,12 @@ local main do
 
                 if mark == nil then
                     return
+                end
+
+                local local_player = entity.get_local_player()
+
+                if local_player ~= nil and entity.is_alive(local_player) then
+                    detected[local_player] = true
                 end
 
                 for player, active in pairs(detected) do
@@ -25719,10 +25815,8 @@ local render do
                     local height = pad_y * 2 + (#items * row_height) + math.max(#items - 1, 0) * row_gap
                     local x = round(position.x - width * 0.5 + 8 * align_value)
                     local y = round(position.y)
-                    local bg_alpha = 66 * alpha
                     local line_alpha = 150 * alpha
 
-                    renderer.rectangle(x, y, width, height, 9, 10, 13, bg_alpha)
                     renderer.gradient(x, y, width * 0.5, 1, r2, g2, b2, 0, r1, g1, b1, line_alpha, true)
                     renderer.gradient(x + width * 0.5, y, width * 0.5, 1, r1, g1, b1, line_alpha, r2, g2, b2, 0, true)
 
@@ -26492,6 +26586,75 @@ local render do
         local damage_esp do
             local ref = resource.render.user_interface.damage_esp
 
+            local classic_hitboxes = { 0, 2, 3, 4, 5, 6 }
+            local classic_cache = { }
+            local classic_last_update = 0
+
+            local function reset_classic_cache()
+                for k in pairs(classic_cache) do
+                    classic_cache[k] = nil
+                end
+            end
+
+            local function get_classic_best_damage(me, enemy)
+                local eye_x, eye_y, eye_z = client.eye_position()
+
+                if eye_x == nil then
+                    return 0
+                end
+
+                local best_damage = 0
+
+                for i = 1, #classic_hitboxes do
+                    local x, y, z = entity.hitbox_position(enemy, classic_hitboxes[i])
+
+                    if x ~= nil then
+                        local _, damage = client.trace_bullet(me, eye_x, eye_y, eye_z, x, y, z)
+                        damage = damage or 0
+
+                        if damage > best_damage then
+                            best_damage = damage
+                        end
+                    end
+                end
+
+                return math.floor(best_damage + 0.5)
+            end
+
+            local function update_classic_cache()
+                local now = globals.realtime()
+
+                if now - classic_last_update < 0.12 then
+                    return
+                end
+
+                classic_last_update = now
+                reset_classic_cache()
+
+                local me = entity.get_local_player()
+
+                if me == nil or not entity.is_alive(me) then
+                    return
+                end
+
+                local enemies = entity.get_players(true)
+
+                for i = 1, #enemies do
+                    local enemy = enemies[i]
+
+                    if entity.is_alive(enemy) and not entity.is_dormant(enemy) then
+                        local damage = get_classic_best_damage(me, enemy)
+
+                        if damage > 0 then
+                            classic_cache[enemy] = {
+                                damage = damage,
+                                lethal = damage >= (entity.get_prop(enemy, 'm_iHealth') or 100)
+                            }
+                        end
+                    end
+                end
+            end
+
             local function has_selection(list, value)
                 if type(list) ~= 'table' then
                     return false
@@ -26596,16 +26759,22 @@ local render do
                 renderer.text(x, y, 253, 69, 106, alpha, 'cbd', 0, lethal and '+' or ' ')
             end
 
-            local function draw_classic_damage(x, y, damage, lethal)
-                local r, g, b, a
+            local function draw_classic_damage(x, y, damage, lethal, alpha_multiplier)
+                local normal_r, normal_g, normal_b, normal_a = ref.inactive_color:get()
+                local lethal_r, lethal_g, lethal_b, lethal_a = ref.active_color:get()
+                local r, g, b, a = normal_r, normal_g, normal_b, normal_a
+                local text = string.format('- %d -', damage)
 
                 if lethal then
-                    r, g, b, a = ref.active_color:get()
-                else
-                    r, g, b, a = ref.inactive_color:get()
+                    r, g, b, a = lethal_r, lethal_g, lethal_b, lethal_a
+                    text = tostring(damage)
                 end
 
-                renderer.text(x, y, r, g, b, a, font_flags[ref.font:get()] or 'c', 0, math.floor(damage))
+                local flags = font_flags[ref.font:get()] or 'c'
+                local draw_alpha = a * alpha_multiplier
+
+                renderer.text(x + 1, y + 1, 0, 0, 0, 160 * alpha_multiplier, flags, 0, text)
+                renderer.text(x, y, r, g, b, draw_alpha, flags, 0, text)
             end
 
             local function on_paint()
@@ -26617,7 +26786,28 @@ local render do
 
                 local enemies = entity.get_players(true)
                 local is_solus_style = ref.style:get() == 'Solus'
-                local alpha = is_solus_style and { selected_hitbox_alpha() } or { 0, 0, 0, 0 }
+
+                if not is_solus_style then
+                    update_classic_cache()
+
+                    for enemy, data in pairs(classic_cache) do
+                        if entity.is_alive(enemy) and not entity.is_dormant(enemy) then
+                            local x1, y1, x2, _, bbox_alpha = entity.get_bounding_box(enemy)
+
+                            if x1 ~= nil and bbox_alpha ~= nil and bbox_alpha > 0 then
+                                local alpha_multiplier = bbox_alpha <= 1 and bbox_alpha or utils.clamp(bbox_alpha, 0, 255) / 255
+                                local x = x1 + (x2 - x1) * 0.5
+                                local y = y1 - ref.offset:get()
+
+                                draw_classic_damage(x, y, data.damage or 0, data.lethal, alpha_multiplier)
+                            end
+                        end
+                    end
+
+                    return
+                end
+
+                local alpha = { selected_hitbox_alpha() }
                 local enemy_target_idx = client.current_threat()
 
                 for i = 1, #enemies do
@@ -26668,8 +26858,6 @@ local render do
                                     renderer.text(x + 12, y, 255, 255, 255, 255, 'cbd', 0, '-')
                                     renderer.text(x - 12, y, 255, 255, 255, 255, 'cbd', 0, '-')
                                 end
-                            else
-                                draw_classic_damage(x, y, display_damage, is_damage_lethal)
                             end
                         end
                     end
@@ -26679,6 +26867,10 @@ local render do
             end
 
             local function update_event_callbacks(value)
+                if not value then
+                    reset_classic_cache()
+                end
+
                 utils.event_callback('paint', on_paint, value)
             end
 
@@ -29385,42 +29577,20 @@ var_0_46:finish("db_read")
 local var_0_94 = {
 	{
 		builtin = true,
-		id = "builtin_legit",
-		name = "Built-in (Legit)",
-		description = "Built-in legit grenades",
-		url = "https://raw.githubusercontent.com/sapphyrus/helper/master/locations/builtin_legit.json",
-		type = "remote"
-	},
-	{
-		builtin = true,
-		id = "builtin_sothatwemaybefree",
-		name = "SoThatWeMayBeFree",
-		description = "Grenades from sothatwemaybefree",
-		url = "https://raw.githubusercontent.com/sapphyrus/helper/master/locations/sothatwemaybefree.json",
-		type = "remote"
-	},
-	{
-		builtin = true,
-		id = "builtin_movement",
-		name = "Built-in (Movement)",
-		description = "Movement locations for popular maps",
-		url = "https://raw.githubusercontent.com/sapphyrus/helper/master/locations/builtin_movement.json",
-		type = "remote"
-	},
-	{
-		builtin = true,
-		id = "sigma_hvh",
-		name = "sigma's HvH locations",
-		description = "Revolutionizing spread HvH",
-		url = "https://pastebin.com/raw/ewHvQ2tD",
+		id = "cryonova_locations_123",
+		name = "123",
+		description = "Cryonova shared locations",
+		url = "https://raw.githubusercontent.com/s4456068-hub/Cryonova/refs/heads/main/Locations",
 		type = "remote"
 	}
 }
 local var_0_95 = {
 	builtin_local_file = true,
-	builtin_hvh = true
+	builtin_hvh = true,
+	cryonova_locations_1 = true,
+	cryonova_locations_2 = true,
+	cryonova_locations_3 = true
 }
-
 for iter_0_2 = 1, #var_0_94 do
 	var_0_95[var_0_94[iter_0_2].id] = true
 end
@@ -29428,7 +29598,7 @@ end
 for iter_0_3 = #var_0_93.sources, 1, -1 do
 	local var_0_96 = var_0_93.sources[iter_0_3]
 
-	if var_0_96 ~= nil and var_0_95[var_0_96.id] then
+	if var_0_96 ~= nil and (var_0_95[var_0_96.id] or var_0_96.type == "remote" or var_0_96.name == "Locations 1" or var_0_96.name == "Locations 2" or var_0_96.name == "Locations 3" or var_0_96.name == "123") then
 		table.remove(var_0_93.sources, iter_0_3)
 	end
 end
@@ -30135,7 +30305,7 @@ local function var_0_110(arg_57_0, arg_57_1)
 end
 
 local function var_0_111(arg_58_0, arg_58_1)
-	var_0_0.get(arg_58_0:gsub("^https://raw.githubusercontent.com/", var_0_24), {
+	var_0_0.get(arg_58_0, {
 		network_timeout = 5,
 		absolute_timeout = 10,
 		params = {
@@ -30160,6 +30330,25 @@ local function var_0_111(arg_58_0, arg_58_1)
 			arg_58_1("Invalid JSON: " .. var_59_2)
 
 			return
+		end
+
+		local cryonova_direct_locations = false
+
+		if type(var_59_2) == "table" and var_59_2.name == nil and var_59_2.locations == nil and var_59_2.url_format == nil then
+			for cryonova_map_name, cryonova_map_locations in pairs(var_59_2) do
+				if type(cryonova_map_name) == "string" and type(cryonova_map_locations) == "table" then
+					cryonova_direct_locations = true
+					break
+				end
+			end
+		end
+
+		if cryonova_direct_locations then
+			var_59_2 = {
+				name = "123",
+				description = "Cryonova shared locations",
+				locations = var_59_2
+			}
 		end
 
 		if type(var_59_2.name) == "string" then
@@ -30470,7 +30659,7 @@ local var_0_112 = {
 						var_0_46:finish("readfile")
 					end)
 				elseif var_64_0 == nil and arg_64_2 and arg_64_0.type == "remote" and arg_64_0.url_format ~= nil then
-					local var_64_1 = arg_64_0.url_format:gsub("%%map%%", arg_64_1):gsub("^https://raw.githubusercontent.com/", var_0_24)
+					local var_64_1 = arg_64_0.url_format:gsub("%%map%%", arg_64_1)
 
 					arg_64_0.remote_status = string.format("Loading map data for %s...", arg_64_1)
 
@@ -30562,7 +30751,9 @@ local function var_0_114()
 
 		var_69_1[var_69_2.id] = true
 
-		if var_69_0.enabled[var_69_2.id] == nil then
+		if var_69_2.id == "cryonova_locations_123" then
+			var_69_0.enabled[var_69_2.id] = true
+		elseif var_69_0.enabled[var_69_2.id] == nil then
 			var_69_0.enabled[var_69_2.id] = true
 		end
 	end
@@ -31078,13 +31269,6 @@ function var_0_99()
 				end
 			end
 
-			table.insert(var_93_18, "＋  Add remote source")
-			table.insert(var_0_162, "add_remote")
-
-			if var_0_165 == "add_remote" then
-				var_93_19 = #var_0_162
-			end
-
 			table.insert(var_93_18, "＋  Create local")
 			table.insert(var_0_162, "add_local")
 
@@ -31125,8 +31309,8 @@ function var_0_99()
 					var_93_0[var_0_144.create] = true
 				elseif var_0_165 ~= nil then
 					var_93_0[var_0_144.enabled] = true
-					var_93_0[var_0_144.edit] = var_0_165.type == "local" and not var_0_165.builtin
-					var_93_0[var_0_144.update] = var_0_165.type == "remote"
+					var_93_0[var_0_144.edit] = var_0_165.type == "local"
+					var_93_0[var_0_144.update] = var_0_165.type == "remote" and not var_0_165.builtin
 					var_93_0[var_0_144.delete] = not var_0_165.builtin
 					var_0_163 = true
 
@@ -31820,7 +32004,7 @@ ui.set_callback(var_0_150.throw_strength, var_0_177)
 client.delay_call(0, var_0_99)
 
 function var_0_155()
-	if type(var_0_165) == "table" and var_0_165.type == "local" and not var_0_165.builtin then
+	if type(var_0_165) == "table" and var_0_165.type == "local" then
 		var_0_164 = true
 
 		var_0_99()
@@ -34180,3 +34364,35 @@ end)
     end
 end
 -- CRYONOVA GRENADE HELPER V3 END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
