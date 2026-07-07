@@ -17,6 +17,25 @@ if not http_ok then
 end
 
 -- ============================================================================
+-- Config persistence bridge for controls that are created outside the main menu
+-- builder. These references are registered as soon as config_system is ready.
+-- ============================================================================
+local cryonova_pending_config_items = { }
+
+local function cryonova_queue_config_item(category, key, ref)
+    if ref ~= nil then
+        table.insert(cryonova_pending_config_items, {
+            category = category,
+            key = key,
+            ref = ref,
+            registered = false
+        })
+    end
+
+    return ref
+end
+
+-- ============================================================================
 -- Inlined external add-ons
 -- Scoreboard equipment + dormant aimbot + bullet tracers.
 -- ============================================================================
@@ -293,16 +312,17 @@ local js = panorama.loadstring([[
 		if(entity_panels[xuid] == null || !entity_panels[xuid].IsValid()){
 			entity_panels[xuid] = null
 
-			// $.Msg("creating panel for ", xuid)
-			let scoreboard_context_panel = $.GetContextPanel().FindChildTraverse("ScoreboardContainer").FindChildTraverse("Scoreboard") || $.GetContextPanel().FindChildTraverse("id-eom-scoreboard-container").FindChildTraverse("Scoreboard")
+			// The scoreboard tree is absent while the HUD is rebuilding.
+			// Do not clear entity_data here: _ApplyData may currently be iterating it.
+			let root = $.GetContextPanel()
+			let normal_container = root.FindChildTraverse("ScoreboardContainer")
+			let eom_container = root.FindChildTraverse("id-eom-scoreboard-container")
+			let scoreboard_context_panel = normal_container != null
+				? normal_container.FindChildTraverse("Scoreboard")
+				: (eom_container != null ? eom_container.FindChildTraverse("Scoreboard") : null)
 
 			if(scoreboard_context_panel == null){
-				// usually happens if end of match scoreboard is open. clean up everything?
-
-				_Clear()
-				_DestroyEntityPanels()
-
-				return
+				return null
 			}
 
 			scoreboard_context_panel.FindChildrenWithClassTraverse("sb-row").forEach(function(el){
@@ -483,10 +503,18 @@ local js = panorama.loadstring([[
 	let _ApplyData = function() {
 		for(entindex in entity_data) {
 			entindex = parseInt(entindex)
+			let data = entity_data[entindex]
+
+			// The HUD can be rebuilt in the middle of this loop.
+			// Always re-check the item before reading or writing .applied.
+			if(data == null) {
+				continue
+			}
+
 			let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
 
-			if(!entity_data[entindex].applied || entity_panels[xuid] == null) {
-				if(_ApplyPlayer.apply(null, entity_data[entindex])) {
+			if(!data.applied || entity_panels[xuid] == null) {
+				if(_ApplyPlayer.apply(null, data) && entity_data[entindex] != null) {
 					// $.Msg("successfully appied for ", entindex)
 					entity_data[entindex].applied = true
 				}
@@ -708,8 +736,8 @@ local cryonova_user_mark_js = panorama.loadstring([[
 			let scoreboard = _FindScoreboard()
 
 			if(scoreboard == null) {
-				_Clear()
-				_DestroyEntityPanels()
+				// Keep data intact until Panorama recreates the scoreboard.
+				// Clearing it here invalidates the active _ApplyData iteration.
 				return null
 			}
 
@@ -872,11 +900,18 @@ local cryonova_user_mark_js = panorama.loadstring([[
 	let _ApplyData = function() {
 		for(entindex in entity_data) {
 			entindex = parseInt(entindex)
+			let data = entity_data[entindex]
+
+			// _GetOrCreateCustomPanel can run while Panorama replaces the
+			// scoreboard. Never dereference a record that disappeared mid-loop.
+			if(data == null) {
+				continue
+			}
 
 			let xuid = GameStateAPI.GetPlayerXuidStringFromEntIndex(entindex)
 
-			if(!entity_data[entindex].applied || entity_panels[xuid] == null) {
-				if(_ApplyPlayer(entindex)) {
+			if(!data.applied || entity_panels[xuid] == null) {
+				if(_ApplyPlayer(entindex) && entity_data[entindex] != null) {
 					entity_data[entindex].applied = true
 				}
 			}
@@ -941,7 +976,16 @@ local function is_cryonova_scoreboard_user(player)
 	return xuid ~= nil and cryonova_scoreboard_user_ids[xuid] == true
 end
 
+local cryonova_scoreboard_marks_next_update = 0
+
 local function update_cryonova_scoreboard_marks()
+	local now = globals.realtime()
+	if now < cryonova_scoreboard_marks_next_update then
+		return
+	end
+
+	cryonova_scoreboard_marks_next_update = now + 0.20
+
 	local local_player = entity.get_local_player()
 
 	if local_player ~= nil then
@@ -959,10 +1003,6 @@ local function update_cryonova_scoreboard_marks()
 	end
 
 	cryonova_user_mark_js.apply()
-
-	client.delay_call(0.01, function()
-		cryonova_user_mark_js.apply()
-	end)
 end
 
 cryonova_user_mark_js.create()
@@ -1053,6 +1093,11 @@ local enemy_only_reference = ui.new_checkbox("VISUALS", "Other ESP", "Enemies on
 local auto_unmute_reference = ui.new_multiselect("VISUALS", "Other ESP", "Auto unmute players", {"Self", "Friends", "All players"})
 
 ui.set(filter_reference, {"Primary", "Secondary", "Grenades", "Bomb"})
+
+cryonova_queue_config_item("Miscellaneous", "extensions.scoreboard_equipment.enabled", enabled_reference)
+cryonova_queue_config_item("Miscellaneous", "extensions.scoreboard_equipment.filter", filter_reference)
+cryonova_queue_config_item("Miscellaneous", "extensions.scoreboard_equipment.enemies_only", enemy_only_reference)
+cryonova_queue_config_item("Miscellaneous", "extensions.scoreboard_equipment.auto_unmute", auto_unmute_reference)
 
 local player_data = {}
 local filter_weapon_name = {}
@@ -1469,699 +1514,1314 @@ on_enabled_changed()
 end
 
 do
-local var_0_0 = client.visible
-local var_0_1 = client.eye_position
-local var_0_2 = client.log
-local var_0_3 = client.trace_bullet
-local var_0_4 = entity.get_bounding_box
-local var_0_5 = entity.get_local_player
-local var_0_6 = entity.get_origin
-local var_0_7 = entity.get_player_name
-local var_0_8 = entity.get_player_resource
-local var_0_9 = entity.get_player_weapon
-local var_0_10 = entity.get_prop
-local var_0_11 = entity.is_dormant
-local var_0_12 = entity.is_enemy
-local var_0_13 = globals.curtime
-local var_0_14 = globals.maxplayers
-local var_0_15 = globals.tickcount
-local var_0_16 = math.max
-local var_0_17 = renderer.indicator
-local var_0_18 = string.format
-local var_0_19 = ui.get
-local var_0_20 = ui.new_checkbox
-local var_0_21 = ui.new_hotkey
-local var_0_22 = ui.reference
-local var_0_23 = ui.set_callback
-local var_0_24 = sqrt
-local var_0_25 = unpack
-local var_0_26 = entity.is_alive
-local var_0_27 = plist.get
-local var_0_28 = entity.hitbox_position
-local var_0_29 = require("ffi")
-local var_0_30 = require("vector")
-local var_0_31 = require("gamesense/csgo_weapons")
-local var_0_32 = vtable_bind("client_panorama.dll", "VClientEntityList003", 3, "void*(__thiscall*)(void*,int)")
-local var_0_33 = vtable_thunk(166, "bool(__thiscall*)(void*)")
-local var_0_34 = vtable_thunk(483, "float(__thiscall*)(void*)")
-local var_0_35 = {
-	mindmg = var_0_22("RAGE", "Aimbot", "Minimum damage"),
-	dormantEsp = var_0_22("VISUALS", "Player ESP", "Dormant"),
-	override_mindmg = {
-		ui.reference("RAGE", "Aimbot", "Minimum damage override")
-	}
-}
-local var_0_36 = var_0_20("RAGE", "Aimbot", "Dormant aimbot")
-local var_0_37 = {}
+-- ============================================================================
+-- Replacement dormant aimbot (dormant_aimbot_v2).
+-- Indicator intentionally remains the old compact Cryonova "DA" indicator.
+-- ============================================================================
+local ffi = require("ffi")
+local vector = require("vector")
+local csgo_weapons = require("gamesense/csgo_weapons")
 
-var_0_37[0] = "Inherited"
+local function safe_ui_reference(...)
+    local result = { pcall(ui.reference, ...) }
 
-for iter_0_0 = 1, 26 do
-	var_0_37[100 + iter_0_0] = "HP + " .. iter_0_0
+    if not result[1] then
+        return nil
+    end
+
+    table.remove(result, 1)
+
+    return unpack(result)
 end
 
-local var_0_38 = {
-	dormantKey = var_0_21("RAGE", "Aimbot", "Dormant aimbot", true),
-	dormantHitboxes = ui.new_multiselect("RAGE", "Aimbot", "Dormant target hitbox", "Head", "Chest", "Stomach", "Legs"),
-	dormantAccuracy = ui.new_slider("RAGE", "Aimbot", "Dormant aimbot accuracy", 50, 100, 90, true, "%", 1),
-	dormantMindmg = ui.new_slider("RAGE", "Aimbot", "Dormant minimum damage", 0, 126, 10, true, nil, 1, var_0_37),
-	experimental = ui.new_checkbox("RAGE", "Aimbot", "Dormant aimbot accurate history [experimental]"),
-	dormantLogs = ui.new_checkbox("RAGE", "Other", "Log dormant shots"),
-	dormantIndicator = ui.new_checkbox("RAGE", "Other", "Dormant aimbot indicator"),
-	dormantlastseen = ui.new_checkbox("RAGE", "Other", "Draw dormant position"),
-	dormantlastseencolor = ui.new_color_picker("RAGE", "Other", "Dormant aimbot indicator", 255, 255, 255, 255)
-}
-local var_0_39 = {
-	"generic",
-	"head",
-	"chest",
-	"stomach",
-	"left arm",
-	"right arm",
-	"left leg",
-	"right leg",
-	"neck",
-	"?",
-	"gear"
-}
-local var_0_40 = {
-	"",
-	"Head",
-	"Chest",
-	"Stomach",
-	"Chest",
-	"Chest",
-	"Legs",
-	"Legs",
-	"Head",
-	"",
-	""
+local function fallback_vtable_bind(module_name, interface_name, index, typedef)
+    if client.create_interface == nil then
+        error("DA: vtable_bind is missing and client.create_interface is unavailable")
+    end
+
+    local instance = client.create_interface(module_name, interface_name)
+    if instance == nil then
+        error(string.format("DA: failed to create %s from %s", interface_name, module_name))
+    end
+
+    local vtable = ffi.cast("void***", instance)
+    local fn = ffi.cast(typedef, vtable[0][index])
+
+    return function(...)
+        return fn(instance, ...)
+    end
+end
+
+local function fallback_vtable_thunk(index, typedef)
+    return function(instance, ...)
+        if instance == nil then
+            return nil
+        end
+
+        local vtable = ffi.cast("void***", instance)
+        local fn = ffi.cast(typedef, vtable[0][index])
+
+        return fn(instance, ...)
+    end
+end
+
+local vtable_bind_fn = rawget(_G, "vtable_bind") or fallback_vtable_bind
+local vtable_thunk_fn = rawget(_G, "vtable_thunk") or fallback_vtable_thunk
+
+local get_client_entity = vtable_bind_fn("client_panorama.dll", "VClientEntityList003", 3, "void*(__thiscall*)(void*,int)")
+local is_weapon_entity = vtable_thunk_fn(166, "bool(__thiscall*)(void*)")
+local get_weapon_inaccuracy = vtable_thunk_fn(483, "float(__thiscall*)(void*)")
+
+local ref_minimum_damage = safe_ui_reference("RAGE", "Aimbot", "Minimum damage")
+local ref_dormant_esp = safe_ui_reference("VISUALS", "Player ESP", "Dormant")
+local ref_override_damage = { safe_ui_reference("RAGE", "Aimbot", "Minimum damage override") }
+
+local damage_labels = {
+    [0] = "Inherited"
 }
 
-local function var_0_41(arg_1_0, arg_1_1, arg_1_2)
-	local var_1_0, var_1_1 = arg_1_0:to(arg_1_1):angles()
-	local var_1_2 = math.rad(var_1_1 + 90)
-	local var_1_3 = var_0_30(math.cos(var_1_2), math.sin(var_1_2), 0) * arg_1_2
-	local var_1_4 = var_0_30(0, 0, arg_1_2)
-
-	return {
-		{
-			text = "Middle",
-			vec = arg_1_1
-		},
-		{
-			text = "Left",
-			vec = arg_1_1 + var_1_3
-		},
-		{
-			text = "Right",
-			vec = arg_1_1 - var_1_3
-		}
-	}
+for i = 1, 26 do
+    damage_labels[100 + i] = "HP + " .. i
 end
 
-local function var_0_42(arg_2_0, arg_2_1)
-	for iter_2_0 = 1, #arg_2_0 do
-		if arg_2_0[iter_2_0] == arg_2_1 then
-			return true
-		end
-	end
-
-	return false
-end
-
-local function var_0_43(arg_3_0, arg_3_1)
-	local var_3_0 = math.sqrt(arg_3_0.forwardmove * arg_3_0.forwardmove + arg_3_0.sidemove * arg_3_0.sidemove)
-
-	if arg_3_1 <= 0 or var_3_0 <= 0 then
-		return
-	end
-
-	if arg_3_0.in_duck == 1 then
-		arg_3_1 = arg_3_1 * 2.94117647
-	end
-
-	if var_3_0 <= arg_3_1 then
-		return
-	end
-
-	local var_3_1 = arg_3_1 / var_3_0
-
-	arg_3_0.forwardmove = arg_3_0.forwardmove * var_3_1
-	arg_3_0.sidemove = arg_3_0.sidemove * var_3_1
-end
-
-local function var_0_44()
-	local var_4_0 = {}
-	local var_4_1 = entity.get_player_resource()
-
-	for iter_4_0 = 1, globals.maxplayers() do
-		if entity.get_prop(var_4_1, "m_bConnected", iter_4_0) == 1 and iter_4_0 ~= entity.get_local_player() and entity.is_enemy(iter_4_0) then
-			var_4_0[#var_4_0 + 1] = iter_4_0
-		end
-	end
-
-	return var_4_0
-end
-
-local function var_0_45()
-	local var_5_0 = {}
-	local var_5_1 = var_0_8()
-
-	for iter_5_0 = 1, globals.maxplayers() do
-		if var_0_10(var_5_1, "m_bConnected", iter_5_0) ~= 1 or var_0_27(iter_5_0, "Add to whitelist") then
-			-- block empty
-		elseif entity.is_dormant(iter_5_0) and entity.is_enemy(iter_5_0) then
-			var_5_0[#var_5_0 + 1] = iter_5_0
-		end
-	end
-
-	return var_5_0
-end
-
-local function var_0_46(arg_6_0, arg_6_1)
-	for iter_6_0, iter_6_1 in ipairs(arg_6_0) do
-		if iter_6_1[1] == arg_6_1 then
-			return true
-		end
-	end
-
-	return false
-end
-
-local var_0_47 = 0
-local var_0_48 = {}
-local var_0_49 = {}
-local var_0_50 = {
-	{
-		scale = 5,
-		hitbox = "Stomach",
-		vec = var_0_30(0, 0, 40)
-	},
-	{
-		scale = 6,
-		hitbox = "Chest",
-		vec = var_0_30(0, 0, 50)
-	},
-	{
-		scale = 3,
-		hitbox = "Head",
-		vec = var_0_30(0, 0, 58)
-	},
-	{
-		scale = 4,
-		hitbox = "Legs",
-		vec = var_0_30(0, 0, 20)
-	}
+local menu = {
+    enabled = ui.new_checkbox("RAGE", "Aimbot", "DA dormant aimbot"),
+    hotkey = ui.new_hotkey("RAGE", "Aimbot", "DA hotkey", true),
+    mode = ui.new_combobox("RAGE", "Aimbot", "DA risk", "Maximum", "Aggressive", "Balanced", "Safe"),
+    hitboxes = ui.new_multiselect("RAGE", "Aimbot", "DA hitboxes", "Head", "Chest", "Stomach", "Legs"),
+    hitbox_priority = ui.new_combobox("RAGE", "Aimbot", "DA hitbox priority", "Auto", "Body", "Head"),
+    accuracy = ui.new_slider("RAGE", "Aimbot", "DA min confidence", 1, 100, 78, true, "%", 1),
+    minimum_damage = ui.new_slider("RAGE", "Aimbot", "DA minimum damage", 0, 126, 0, true, nil, 1, damage_labels),
+    max_age = ui.new_slider("RAGE", "Aimbot", "DA max record age", 4, 160, 72, true, "t", 1),
+    prediction_ticks = ui.new_slider("RAGE", "Aimbot", "DA prediction", 0, 8, 3, true, "t", 1),
+    extrapolation_mode = ui.new_combobox("RAGE", "Aimbot", "DA extrapolation mode", "Prefer predicted", "Force predicted", "Off"),
+    max_fov = ui.new_slider("RAGE", "Aimbot", "DA max FOV", 1, 180, 70, true, "deg", 1),
+    max_inaccuracy = ui.new_slider("RAGE", "Aimbot", "DA max inaccuracy", 1, 50, 10, true, " x0.001", 1),
+    accurate_history = ui.new_checkbox("RAGE", "Aimbot", "DA accurate history"),
+    skip_visible = ui.new_checkbox("RAGE", "Aimbot", "DA skip visible points"),
+    logs = ui.new_checkbox("RAGE", "Other", "DA logs"),
+    debug = ui.new_checkbox("RAGE", "Other", "DA indicator"),
+    draw_last_seen = ui.new_checkbox("RAGE", "Other", "DA draw last seen"),
+    draw_color = ui.new_color_picker("RAGE", "Other", "DA draw last seen", 120, 205, 255, 180)
 }
-local var_0_51 = {
-	[0] = "Head",
-	nil,
-	"Stomach",
-	nil,
-	"Stomach",
-	"Chest",
-	"Chest",
-	"Legs",
-	"Legs"
+
+-- Register this replacement dormant aimbot in Cryonova's config system.
+-- Shared keys keep the old module's saved values where the controls match.
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.enabled", menu.enabled)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.hotkey", menu.hotkey)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.mode", menu.mode)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.hitboxes", menu.hitboxes)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.hitbox_priority", menu.hitbox_priority)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.accuracy", menu.accuracy)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.minimum_damage", menu.minimum_damage)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.max_record_age", menu.max_age)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.prediction_ticks", menu.prediction_ticks)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.extrapolation_mode", menu.extrapolation_mode)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.max_fov", menu.max_fov)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.max_inaccuracy", menu.max_inaccuracy)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.accurate_history", menu.accurate_history)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.skip_visible", menu.skip_visible)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.logs", menu.logs)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.indicator", menu.debug)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.draw_last_seen", menu.draw_last_seen)
+cryonova_queue_config_item("Ragebot", "extensions.dormant_aimbot.draw_last_seen_color", menu.draw_color)
+
+ui.set(menu.extrapolation_mode, "Prefer predicted")
+ui.set(menu.skip_visible, true)
+ui.set(menu.debug, true)
+
+local INTERNAL_AUTOSTOP = true
+local INTERNAL_AUTOSCOPE = true
+
+local profiles = {
+    Maximum = {
+        age_scale = 1.25,
+        confidence_bonus = 12,
+        damage_margin = 0,
+        point_scale = 1.25,
+        fov_penalty = 0.85,
+        prediction_scale = 1.25
+    },
+    Aggressive = {
+        age_scale = 1.0,
+        confidence_bonus = 8,
+        damage_margin = 1,
+        point_scale = 1.1,
+        fov_penalty = 1.0,
+        prediction_scale = 1.0
+    },
+    Balanced = {
+        age_scale = 0.75,
+        confidence_bonus = 5,
+        damage_margin = 3,
+        point_scale = 1.0,
+        fov_penalty = 1.15,
+        prediction_scale = 0.75
+    },
+    Safe = {
+        age_scale = 0.5,
+        confidence_bonus = 2,
+        damage_margin = 7,
+        point_scale = 0.85,
+        fov_penalty = 1.4,
+        prediction_scale = 0.35
+    }
 }
-local var_0_52 = 1
-local var_0_53
-local var_0_54
-local var_0_55
-local var_0_56
-local var_0_57
-local var_0_58 = false
 
-local function var_0_59(arg_7_0)
-	local var_7_0 = var_0_19(var_0_38.dormantHitboxes)
-	local var_7_1 = {}
+local hitgroup_names = {
+    "generic",
+    "head",
+    "chest",
+    "stomach",
+    "left arm",
+    "right arm",
+    "left leg",
+    "right leg",
+    "neck",
+    "?",
+    "gear"
+}
 
-	for iter_7_0, iter_7_1 in ipairs(var_0_44()) do
-		local var_7_2, var_7_3, var_7_4, var_7_5, var_7_6 = entity.get_bounding_box(iter_7_1)
+local hitgroup_to_hitbox = {
+    "",
+    "Head",
+    "Chest",
+    "Stomach",
+    "Chest",
+    "Chest",
+    "Legs",
+    "Legs",
+    "Head",
+    "",
+    ""
+}
 
-		if var_7_6 < 1 then
-			if not var_0_46(var_0_49, iter_7_1) then
-				table.insert(var_0_49, {
-					iter_7_1,
-					globals.tickcount()
-				})
-			end
-		elseif var_0_46(var_0_49, iter_7_1) then
-			for iter_7_2, iter_7_3 in ipairs(var_0_49) do
-				if iter_7_3[1] == iter_7_1 then
-					table.remove(var_0_49, iter_7_2)
-				end
-			end
-		end
-	end
+local hitbox_indices = {
+    Head = { 0, 8 },
+    Chest = { 5, 6 },
+    Stomach = { 2, 3, 4 },
+    Legs = { 7 }
+}
 
-	if not var_0_19(var_0_36) then
-		return
-	end
+local fallback_offsets = {
+    Head = {
+        scale = 3.5,
+        vec = vector(0, 0, 58)
+    },
+    Chest = {
+        scale = 6,
+        vec = vector(0, 0, 50)
+    },
+    Stomach = {
+        scale = 5.5,
+        vec = vector(0, 0, 40)
+    },
+    Legs = {
+        scale = 4,
+        vec = vector(0, 0, 20)
+    }
+}
 
-	if not var_0_19(var_0_38.dormantKey) then
-		return
-	end
+local draw_hitboxes = {
+    0,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    15,
+    16,
+    17,
+    18
+}
 
-	local var_7_7 = var_0_5()
-	local var_7_8 = var_0_9(var_7_7)
+local state = {
+    records = {},
+    active_targets = {},
+    freeze_until_tick = 0,
+    status = "idle",
+    detail = "",
+    last_candidate = nil,
+    pending = nil,
+    pending_hit = false
+}
 
-	if not var_7_8 then
-		return
-	end
+local runtime_callbacks_enabled = false
 
-	local var_7_9 = var_0_32(var_7_8)
-
-	if not var_7_9 or not var_0_33(var_7_9) then
-		return
-	end
-
-	local var_7_10 = var_0_34(var_7_9)
-
-	if not var_7_10 then
-		return
-	end
-
-	local var_7_11 = var_0_30(var_0_1())
-	local var_7_12 = var_0_10(var_7_7, "m_flSimulationTime")
-	local var_7_13 = globals.tickcount()
-	local var_7_14 = var_0_31(var_7_8)
-	local var_7_15 = var_0_10(var_7_7, "m_bIsScoped") == 1
-	local var_7_16 = bit.band(var_0_10(var_7_7, "m_fFlags"), bit.lshift(1, 0))
-	local var_7_17 = var_0_45()
-
-	if #var_7_17 == 0 then
-		var_0_52 = 1
-		var_0_48 = {}
-
-		return
-	end
-
-	if var_0_52 > #var_7_17 then
-		var_0_52 = 1
-	end
-
-	if var_7_13 % #var_7_17 ~= 0 then
-		var_0_52 = var_0_52 % #var_7_17 + 1
-	else
-		var_0_52 = 1
-	end
-
-	local var_7_18 = var_7_17[var_0_52]
-
-	if not var_7_18 then
-		var_0_48 = {}
-
-		return
-	end
-
-	if var_7_13 < var_0_47 then
-		var_0_48 = {}
-
-		return
-	end
-
-	if var_7_14.type == "grenade" or var_7_14.type == "knife" then
-		var_0_48 = {}
-
-		return
-	end
-
-	if arg_7_0.in_jump == 1 and var_7_16 == 0 then
-		var_0_48 = {}
-
-		return
-	end
-
-	local var_7_19 = {}
-	local var_7_20 = var_0_19(var_0_38.dormantAccuracy)
-	local var_7_21 = entity.get_esp_data(var_7_18).health
-	local var_7_22 = var_0_19(var_0_35.override_mindmg[1]) and var_0_19(var_0_35.override_mindmg[2])
-	local var_7_23 = var_0_19(var_0_38.dormantMindmg) == 0 and not var_7_22 and var_0_19(var_0_35.mindmg) or var_0_19(var_0_38.dormantMindmg) == 0 and var_7_22 and var_0_19(var_0_35.override_mindmg[3]) or var_0_19(var_0_38.dormantMindmg)
-
-	if var_7_23 > 100 then
-		var_7_23 = var_7_23 - 100 + var_7_21
-	end
-
-	local var_7_24 = entity.get_prop(var_7_18, "m_flDuckAmount")
-
-	for iter_7_4, iter_7_5 in ipairs(var_0_50) do
-		if #var_7_0 ~= 0 then
-			if var_0_42(var_7_0, iter_7_5.hitbox) then
-				if iter_7_5.hitbox == "Head" then
-					table.insert(var_7_19, {
-						vec = iter_7_5.vec - var_0_30(0, 0, var_7_24 * 10),
-						scale = iter_7_5.scale,
-						hitbox = iter_7_5.hitbox
-					})
-				elseif iter_7_5.hitbox == "Chest" then
-					table.insert(var_7_19, {
-						vec = iter_7_5.vec - var_0_30(0, 0, var_7_24 * 4),
-						scale = iter_7_5.scale,
-						hitbox = iter_7_5.hitbox
-					})
-				else
-					table.insert(var_7_19, {
-						vec = iter_7_5.vec,
-						scale = iter_7_5.scale,
-						hitbox = iter_7_5.hitbox
-					})
-				end
-			end
-		else
-			table.insert(var_7_19, 1, {
-				vec = iter_7_5.vec,
-				scale = iter_7_5.scale,
-				hitbox = iter_7_5.hitbox
-			})
-		end
-	end
-
-	local var_7_25
-
-	if var_7_14.is_revolver then
-		var_7_25 = var_7_12 > var_0_10(var_7_8, "m_flNextPrimaryAttack")
-	else
-		var_7_25 = var_7_12 > var_0_16(var_0_10(var_7_7, "m_flNextAttack"), var_0_10(var_7_8, "m_flNextPrimaryAttack"), var_0_10(var_7_8, "m_flNextSecondaryAttack"))
-	end
-
-	if not var_7_25 then
-		return
-	end
-
-	local var_7_26 = var_0_30(entity.get_origin(var_7_18))
-	local var_7_27 = var_0_30(var_0_28(var_7_18, 4))
-	local var_7_28, var_7_29, var_7_30, var_7_31, var_7_32 = entity.get_bounding_box(var_7_18)
-
-	var_0_48[var_7_18] = nil
-
-	for iter_7_6 = 1, 7 do
-		if #var_7_0 ~= 0 and var_0_42(var_7_0, var_0_51[iter_7_6 - 1]) and var_0_26(var_7_18) and var_7_32 > 0 and math.abs(var_7_26.x - var_7_27.x) < 7 then
-			table.insert(var_7_1, {
-				scale = 3,
-				hitbox = var_0_51[iter_7_6 - 1],
-				vec = var_0_30(var_0_28(var_7_18, iter_7_6 - 1))
-			})
-		end
-	end
-
-	if var_7_26.x and var_7_32 > 0 then
-		local var_7_33
-		local var_7_34
-		local var_7_35
-
-		if var_0_19(var_0_38.experimental) then
-			for iter_7_7, iter_7_8 in ipairs(var_7_1) do
-				local var_7_36 = var_0_41(var_7_11, iter_7_8.vec, 3)
-				local var_7_37
-				local var_7_38
-				local var_7_39
-				local var_7_40
-
-				for iter_7_9, iter_7_10 in ipairs(var_7_36) do
-					local var_7_41 = iter_7_10.vec
-					local var_7_42, var_7_43 = client.trace_bullet(var_7_7, var_7_11.x, var_7_11.y, var_7_11.z, var_7_41.x, var_7_41.y, var_7_41.z, true)
-
-					if iter_7_8.hitbox == "Head" then
-						var_7_43 = var_7_43 * 4
-					end
-
-					if var_7_43 ~= 0 and var_7_23 < var_7_43 then
-						var_7_33 = var_7_41
-						var_7_34 = var_7_43
-						var_7_35 = iter_7_8.hitbox
-
-						break
-					end
-				end
-			end
-		end
-
-		if not (var_7_20 < math.floor(var_7_32 * 100) + 5) then
-			return
-		end
-
-		local var_7_44
-		local var_7_45
-		local var_7_46
-
-		if var_7_34 ~= nil then
-			var_7_44 = var_7_33
-			var_7_45 = var_7_34
-			var_0_54 = var_7_35
-			var_0_55 = nil
-			var_0_56 = var_7_18
-			var_0_57 = var_7_32
-		else
-			for iter_7_11, iter_7_12 in ipairs(var_7_19) do
-				local var_7_47 = var_7_26 + iter_7_12.vec
-				local var_7_48 = var_0_41(var_7_11, var_7_47, iter_7_12.scale)
-
-				for iter_7_13, iter_7_14 in ipairs(var_7_48) do
-					local var_7_49 = iter_7_14.vec
-					local var_7_50, var_7_51 = var_0_3(var_7_7, var_7_11.x, var_7_11.y, var_7_11.z, var_7_49.x, var_7_49.y, var_7_49.z, true)
-
-					if var_7_51 ~= 0 and var_7_23 < var_7_51 then
-						var_7_44 = var_7_49
-						var_7_45 = var_7_51
-						var_0_54 = iter_7_12.hitbox
-						var_0_55 = iter_7_14.text
-						var_0_56 = var_7_18
-						var_0_57 = var_7_32
-
-						break
-					end
-				end
-
-				if var_7_44 and var_7_45 then
-					break
-				end
-			end
-		end
-
-		if not var_7_45 then
-			return
-		end
-
-		if not var_7_44 then
-			return
-		end
-
-		if var_0_0(var_7_44.x, var_7_44.y, var_7_44.z) then
-			return
-		end
-
-		var_0_43(arg_7_0, (var_7_15 and var_7_14.max_player_speed_alt or var_7_14.max_player_speed) * 0.33)
-
-		local var_7_52, var_7_53 = var_7_11:to(var_7_44):angles()
-
-		if not var_7_15 and var_7_14.type == "sniperrifle" and arg_7_0.in_jump == 0 and var_7_16 == 1 then
-			arg_7_0.in_attack2 = 1
-		end
-
-		var_0_48[var_7_18] = true
-
-		if var_7_10 < 0.01 then
-			arg_7_0.pitch = var_7_52
-			arg_7_0.yaw = var_7_53
-			arg_7_0.in_attack = 1
-			var_0_53 = true
-		end
-	end
+local function log_debug(text)
+    if ui.get(menu.logs) then
+        client.log("[DA] " .. text)
+    end
 end
 
-client.register_esp_flag("DA", 255, 255, 255, function(arg_8_0)
-	if ui.get(var_0_36) and entity.is_alive(var_0_5()) then
-		return var_0_48[arg_8_0]
-	end
+local function set_status(status, detail)
+    state.status = status
+    state.detail = detail or ""
+end
+
+local function normalize_yaw(value)
+    value = value % 360
+
+    if value > 180 then
+        value = value - 360
+    end
+
+    return value
+end
+
+local function angle_distance(pitch1, yaw1, pitch2, yaw2)
+    local pitch_delta = normalize_yaw((pitch1 or 0) - (pitch2 or 0))
+    local yaw_delta = normalize_yaw((yaw1 or 0) - (yaw2 or 0))
+
+    return math.sqrt(pitch_delta * pitch_delta + yaw_delta * yaw_delta)
+end
+
+local function contains(list, value)
+    for i = 1, #list do
+        if list[i] == value then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function selected_hitbox_map()
+    local selected = ui.get(menu.hitboxes)
+    local map = {}
+
+    if #selected == 0 then
+        map.Head = true
+        map.Chest = true
+        map.Stomach = true
+        map.Legs = true
+        return map
+    end
+
+    for i = 1, #selected do
+        map[selected[i]] = true
+    end
+
+    return map
+end
+
+local function get_origin(entindex)
+    local x, y, z = entity.get_origin(entindex)
+
+    if x == nil then
+        return nil
+    end
+
+    return vector(x, y, z)
+end
+
+local function get_hitbox(entindex, hitbox)
+    local x, y, z = entity.hitbox_position(entindex, hitbox)
+
+    if x == nil then
+        return nil
+    end
+
+    return vector(x, y, z)
+end
+
+local function get_eye_position()
+    local x, y, z = client.eye_position()
+
+    if x == nil then
+        return nil
+    end
+
+    return vector(x, y, z)
+end
+
+local function vec_add_scaled(pos, vel, scale)
+    if pos == nil or vel == nil then
+        return pos
+    end
+
+    return vector(
+        pos.x + vel.x * scale,
+        pos.y + vel.y * scale,
+        pos.z + vel.z * scale
+    )
+end
+
+local function vec_distance(a, b)
+    if a == nil or b == nil then
+        return 999999
+    end
+
+    local dx = a.x - b.x
+    local dy = a.y - b.y
+    local dz = a.z - b.z
+
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+local function clamp_value(value, minimum, maximum)
+    if value < minimum then
+        return minimum
+    end
+
+    if value > maximum then
+        return maximum
+    end
+
+    return value
+end
+
+local function vec_len2d(vel)
+    if vel == nil then
+        return 0
+    end
+
+    return math.sqrt(vel.x * vel.x + vel.y * vel.y)
+end
+
+local function get_extrapolation_mode()
+    return ui.get(menu.extrapolation_mode) or "Off"
+end
+
+local function prediction_enabled(mode)
+    return mode ~= "Off" and ui.get(menu.prediction_ticks) > 0
+end
+
+local function force_prediction(mode)
+    return mode == "Force predicted"
+end
+
+local function evaluate_prediction(record, prediction_time, profile)
+    if record == nil or record.velocity == nil or prediction_time <= 0 then
+        return false, "off", 0, 0
+    end
+
+    local speed = vec_len2d(record.velocity)
+    local shift = speed * prediction_time
+    local max_shift = 24 + ui.get(menu.prediction_ticks) * 18 * profile.prediction_scale
+
+    if math.abs(record.velocity.z or 0) > 180 and ui.get(menu.prediction_ticks) > 1 then
+        return false, "vertical", speed, shift
+    end
+
+    if shift > max_shift then
+        return false, "far", speed, shift
+    end
+
+    return true, "ok", speed, shift
+end
+
+local function capture_hitboxes(enemy)
+    local result = {}
+
+    for group, indices in pairs(hitbox_indices) do
+        for i = 1, #indices do
+            local pos = get_hitbox(enemy, indices[i])
+
+            if pos ~= nil then
+                result[group] = result[group] or {}
+                table.insert(result[group], {
+                    index = indices[i],
+                    pos = pos
+                })
+            end
+        end
+    end
+
+    return result
+end
+
+local function get_connected_enemies()
+    local players = {}
+    local player_resource = entity.get_player_resource()
+
+    if player_resource == nil then
+        return players
+    end
+
+    local local_player = entity.get_local_player()
+
+    for entindex = 1, globals.maxplayers() do
+        if entity.get_prop(player_resource, "m_bConnected", entindex) == 1
+            and entindex ~= local_player
+            and entity.is_enemy(entindex)
+        then
+            players[#players + 1] = entindex
+        end
+    end
+
+    return players
+end
+
+local function get_dormant_enemies()
+    local players = {}
+    local player_resource = entity.get_player_resource()
+
+    if player_resource == nil then
+        return players
+    end
+
+    for entindex = 1, globals.maxplayers() do
+        if entity.get_prop(player_resource, "m_bConnected", entindex) == 1
+            and not plist.get(entindex, "Add to whitelist")
+            and entity.is_enemy(entindex)
+            and entity.is_alive(entindex)
+            and entity.is_dormant(entindex)
+        then
+            players[#players + 1] = entindex
+        end
+    end
+
+    return players
+end
+
+local function sample_enemy(enemy)
+    local origin = get_origin(enemy)
+    local body = get_hitbox(enemy, 4)
+    local _, _, _, _, alpha = entity.get_bounding_box(enemy)
+
+    alpha = alpha or 0
+
+    local reliable = origin ~= nil
+        and alpha > 0
+        and (body == nil or math.abs(origin.x - body.x) < 12)
+
+    local record = state.records[enemy]
+    if record == nil then
+        record = {
+            hits = 0,
+            misses = 0,
+            velocity = vector(0, 0, 0)
+        }
+        state.records[enemy] = record
+    end
+
+    record.current_origin = origin
+    record.current_body = body
+    record.current_alpha = alpha
+    record.current_reliable = reliable
+    record.dormant = entity.is_dormant(enemy)
+
+    if reliable then
+        local now = globals.curtime()
+
+        if record.origin ~= nil and record.time ~= nil and now > record.time then
+            local dt = now - record.time
+            record.velocity = vector(
+                (origin.x - record.origin.x) / dt,
+                (origin.y - record.origin.y) / dt,
+                (origin.z - record.origin.z) / dt
+            )
+        end
+
+        record.origin = origin
+        record.body = body
+        record.alpha = alpha
+        record.duck = entity.get_prop(enemy, "m_flDuckAmount") or 0
+        record.hitboxes = capture_hitboxes(enemy)
+        record.tick = globals.tickcount()
+        record.time = now
+    end
+
+    return record
+end
+
+local function update_records()
+    local enemies = get_connected_enemies()
+
+    for i = 1, #enemies do
+        sample_enemy(enemies[i])
+    end
+end
+
+local function resolve_minimum_damage(enemy)
+    local damage = ui.get(menu.minimum_damage)
+
+    if damage == 0 then
+        local override_active = ref_override_damage[1] ~= nil
+            and ref_override_damage[2] ~= nil
+            and ui.get(ref_override_damage[1])
+            and ui.get(ref_override_damage[2])
+
+        if override_active and ref_override_damage[3] ~= nil then
+            damage = ui.get(ref_override_damage[3])
+        elseif ref_minimum_damage ~= nil then
+            damage = ui.get(ref_minimum_damage)
+        else
+            damage = 1
+        end
+    end
+
+    if damage > 100 then
+        local esp_data = entity.get_esp_data(enemy)
+        local health = esp_data ~= nil and esp_data.health or 0
+        damage = damage - 100 + health
+    end
+
+    return damage
+end
+
+local function get_enemy_health(enemy)
+    local esp_data = entity.get_esp_data(enemy)
+    return esp_data ~= nil and esp_data.health or 0
+end
+
+local function get_profile()
+    return profiles[ui.get(menu.mode)] or profiles.Maximum
+end
+
+local function get_record_age(record)
+    if record == nil or record.tick == nil then
+        return 999999
+    end
+
+    return globals.tickcount() - record.tick
+end
+
+local function make_multipoints(eye_pos, point, scale)
+    local _, yaw = eye_pos:to(point):angles()
+    local side_angle = math.rad(yaw + 90)
+    local side = vector(math.cos(side_angle), math.sin(side_angle), 0) * scale
+    local up = vector(0, 0, scale * 0.65)
+
+    return {
+        {
+            name = "Middle",
+            pos = point
+        },
+        {
+            name = "Left",
+            pos = point + side
+        },
+        {
+            name = "Right",
+            pos = point - side
+        },
+        {
+            name = "High",
+            pos = point + up
+        },
+        {
+            name = "Low",
+            pos = point - up
+        }
+    }
+end
+
+local function add_point(points, source, hitbox, pos, scale, confidence, predicted, prediction_reason, prediction_shift)
+    if pos == nil then
+        return
+    end
+
+    points[#points + 1] = {
+        source = source,
+        hitbox = hitbox,
+        pos = pos,
+        scale = scale,
+        confidence = confidence or 0,
+        predicted = predicted == true,
+        prediction_reason = prediction_reason or "",
+        prediction_shift = prediction_shift or 0
+    }
+end
+
+local function build_points(enemy, record, hitbox_map, profile)
+    local points = {}
+    local mode = get_extrapolation_mode()
+    local prediction_ticks = prediction_enabled(mode) and ui.get(menu.prediction_ticks) or 0
+    local prediction_time = globals.tickinterval() * prediction_ticks * profile.prediction_scale
+    local record_age = get_record_age(record)
+    local use_record = record ~= nil and record.origin ~= nil
+    local force_predicted = force_prediction(mode)
+    local prediction_safe, prediction_reason, _, prediction_shift = evaluate_prediction(record, prediction_time, profile)
+    local allow_predicted = use_record and prediction_ticks > 0 and prediction_safe
+    local allow_baseline = not force_predicted
+    local origin = record ~= nil and record.current_reliable and record.current_origin or (use_record and record.origin or nil)
+    local confidence = record ~= nil and (record.current_alpha or record.alpha or 0) or 0
+
+    if allow_baseline and ui.get(menu.accurate_history) and record ~= nil and record.current_reliable and record.current_alpha > 0 then
+        for hitbox, enabled in pairs(hitbox_map) do
+            if enabled then
+                local indices = hitbox_indices[hitbox]
+
+                for i = 1, #(indices or {}) do
+                    local pos = get_hitbox(enemy, indices[i])
+
+                    if pos ~= nil then
+                        add_point(points, "current-hitbox", hitbox, pos, 3.0 * profile.point_scale, confidence)
+                    end
+                end
+            end
+        end
+    end
+
+    if use_record and record.hitboxes ~= nil and record_age <= ui.get(menu.max_age) * profile.age_scale then
+        local shift = allow_predicted and record.velocity ~= nil
+            and vector(record.velocity.x * prediction_time, record.velocity.y * prediction_time, record.velocity.z * prediction_time)
+            or vector(0, 0, 0)
+
+        for hitbox, enabled in pairs(hitbox_map) do
+            local entries = record.hitboxes[hitbox]
+
+            if enabled and entries ~= nil then
+                for i = 1, #entries do
+                    if allow_predicted then
+                        add_point(
+                            points,
+                            "predicted-hitbox",
+                            hitbox,
+                            entries[i].pos + shift,
+                            3.35 * profile.point_scale,
+                            record.alpha or 0,
+                            true,
+                            prediction_reason,
+                            prediction_shift
+                        )
+                    end
+
+                    if allow_baseline then
+                        add_point(points, "record-hitbox", hitbox, entries[i].pos, 3.25 * profile.point_scale, record.alpha or 0)
+                    end
+                end
+            end
+        end
+    end
+
+    if origin ~= nil then
+        local duck = record ~= nil and record.duck or entity.get_prop(enemy, "m_flDuckAmount") or 0
+        local predicted_origin = allow_predicted and vec_add_scaled(origin, record and record.velocity, prediction_time) or nil
+
+        for hitbox, enabled in pairs(hitbox_map) do
+            local data = fallback_offsets[hitbox]
+
+            if enabled and data ~= nil then
+                local offset = data.vec
+
+                if hitbox == "Head" then
+                    offset = offset - vector(0, 0, duck * 10)
+                elseif hitbox == "Chest" then
+                    offset = offset - vector(0, 0, duck * 4)
+                end
+
+                if predicted_origin ~= nil then
+                    add_point(
+                        points,
+                        "predicted-fallback",
+                        hitbox,
+                        predicted_origin + offset,
+                        data.scale * profile.point_scale,
+                        confidence,
+                        true,
+                        prediction_reason,
+                        prediction_shift
+                    )
+                end
+
+                if allow_baseline then
+                    add_point(points, "origin-fallback", hitbox, origin + offset, data.scale * profile.point_scale, confidence)
+                end
+            end
+        end
+    end
+
+    return points
+end
+
+local function trace_damage(local_player, eye_pos, point)
+    local ok, _, damage = pcall(
+        client.trace_bullet,
+        local_player,
+        eye_pos.x,
+        eye_pos.y,
+        eye_pos.z,
+        point.x,
+        point.y,
+        point.z,
+        true
+    )
+
+    if not ok or damage == nil then
+        return 0
+    end
+
+    return damage
+end
+
+local function score_candidate(candidate, cmd, eye_pos, health, profile)
+    local pitch, yaw = eye_pos:to(candidate.point):angles()
+    local fov = angle_distance(cmd.pitch or 0, cmd.yaw or 0, pitch, yaw)
+    local distance = vec_distance(eye_pos, candidate.point)
+    local priority = ui.get(menu.hitbox_priority)
+    local score = candidate.damage * 3.0
+
+    if health > 0 and candidate.damage >= health then
+        score = score + 180
+    end
+
+    if candidate.hitbox == "Head" then
+        score = score + (priority == "Head" and 60 or priority == "Body" and -20 or 20)
+    elseif candidate.hitbox == "Stomach" then
+        score = score + (priority == "Head" and -5 or 45)
+    elseif candidate.hitbox == "Chest" then
+        score = score + (priority == "Head" and -8 or 38)
+    elseif candidate.hitbox == "Legs" then
+        score = score + 6
+    end
+
+    if candidate.source == "current-hitbox" then
+        score = score + 45
+    elseif candidate.source == "predicted-hitbox" then
+        score = score + 42
+    elseif candidate.source == "record-hitbox" then
+        score = score + 24
+    elseif candidate.source == "predicted-fallback" then
+        score = score + 16
+    end
+
+    if candidate.predicted then
+        score = score - (candidate.prediction_shift or 0) * 0.08
+    end
+
+    score = score + (candidate.confidence or 0) * 1.15
+    score = score - fov * profile.fov_penalty
+    score = score - candidate.age * 0.6
+    score = score - distance / 95
+
+    candidate.pitch = pitch
+    candidate.yaw = yaw
+    candidate.fov = fov
+    candidate.distance = distance
+    candidate.score = score
+
+    return score
+end
+
+local function scan_enemy(local_player, enemy, cmd, eye_pos, profile)
+    local record = sample_enemy(enemy)
+    local age = get_record_age(record)
+    local max_age = ui.get(menu.max_age) * profile.age_scale
+
+    if age > max_age and not record.current_reliable then
+        return nil, "old"
+    end
+
+    local confidence = math.floor((record.current_alpha or record.alpha or 0) * 100)
+
+    if confidence + profile.confidence_bonus < ui.get(menu.accuracy) then
+        return nil, "low-confidence"
+    end
+
+    local points = build_points(enemy, record, selected_hitbox_map(), profile)
+
+    if #points == 0 then
+        return nil, "no-points"
+    end
+
+    local minimum_damage = resolve_minimum_damage(enemy)
+    local health = get_enemy_health(enemy)
+    local best = nil
+
+    for i = 1, #points do
+        local base = points[i]
+        local multipoints = make_multipoints(eye_pos, base.pos, base.scale)
+
+        for j = 1, #multipoints do
+            local point = multipoints[j].pos
+
+            if not ui.get(menu.skip_visible) or not client.visible(point.x, point.y, point.z) then
+                local damage = trace_damage(local_player, eye_pos, point)
+
+                if damage >= minimum_damage + profile.damage_margin then
+                    local candidate = {
+                        enemy = enemy,
+                        point = point,
+                        point_name = multipoints[j].name,
+                        hitbox = base.hitbox,
+                        source = base.source,
+                        damage = damage,
+                        confidence = base.confidence,
+                        age = age,
+                        predicted = base.predicted,
+                        prediction_reason = base.prediction_reason,
+                        prediction_shift = base.prediction_shift,
+                        minimum_damage = minimum_damage
+                    }
+
+                    score_candidate(candidate, cmd, eye_pos, health, profile)
+
+                    if candidate.fov <= ui.get(menu.max_fov) and (best == nil or candidate.score > best.score) then
+                        best = candidate
+                    end
+                end
+            end
+        end
+    end
+
+    if best == nil then
+        return nil, "no-damage"
+    end
+
+    return best, nil
+end
+
+local function clamp_movement(cmd, max_speed)
+    if not INTERNAL_AUTOSTOP or max_speed == nil then
+        return
+    end
+
+    local speed = math.sqrt(cmd.forwardmove * cmd.forwardmove + cmd.sidemove * cmd.sidemove)
+    local limit = max_speed * 0.31
+
+    if cmd.in_duck == 1 then
+        limit = limit * 2.94117647
+    end
+
+    if limit <= 0 or speed <= limit then
+        return
+    end
+
+    local scale = limit / speed
+    cmd.forwardmove = cmd.forwardmove * scale
+    cmd.sidemove = cmd.sidemove * scale
+end
+
+local function get_weapon_context(local_player)
+    local weapon = entity.get_player_weapon(local_player)
+
+    if weapon == nil then
+        return nil
+    end
+
+    local weapon_info = csgo_weapons(weapon)
+
+    if weapon_info == nil then
+        return nil
+    end
+
+    local weapon_entity = get_client_entity(weapon)
+    local ok_weapon, is_weapon = pcall(is_weapon_entity, weapon_entity)
+
+    if not ok_weapon or not is_weapon then
+        return nil
+    end
+
+    local ok_inaccuracy, inaccuracy = pcall(get_weapon_inaccuracy, weapon_entity)
+
+    if not ok_inaccuracy then
+        inaccuracy = nil
+    end
+
+    return {
+        entindex = weapon,
+        info = weapon_info,
+        inaccuracy = inaccuracy
+    }
+end
+
+local function can_attack_now(local_player, weapon_ctx)
+    local simulation_time = entity.get_prop(local_player, "m_flSimulationTime")
+
+    if simulation_time == nil then
+        return false
+    end
+
+    local weapon = weapon_ctx.entindex
+    local next_attack = entity.get_prop(local_player, "m_flNextAttack") or 0
+    local next_primary_attack = entity.get_prop(weapon, "m_flNextPrimaryAttack") or 0
+    local next_secondary_attack = entity.get_prop(weapon, "m_flNextSecondaryAttack") or 0
+
+    if weapon_ctx.info.is_revolver then
+        return simulation_time > next_primary_attack
+    end
+
+    return simulation_time > math.max(next_attack, next_primary_attack, next_secondary_attack)
+end
+
+local function weapon_allowed(weapon_info)
+    if weapon_info == nil then
+        return false
+    end
+
+    if weapon_info.type == "grenade" or weapon_info.type == "knife" then
+        return false
+    end
+
+    if weapon_info.idx == 31 then
+        return false
+    end
+
+    return true
+end
+
+local function scan_targets(local_player, cmd, eye_pos)
+    local dormant_enemies = get_dormant_enemies()
+
+    state.active_targets = {}
+
+    if #dormant_enemies == 0 then
+        return nil, "none"
+    end
+
+    local profile = get_profile()
+    local best = nil
+    local skip_reasons = {}
+
+    for i = 1, #dormant_enemies do
+        local candidate, reason = scan_enemy(local_player, dormant_enemies[i], cmd, eye_pos, profile)
+
+        if candidate ~= nil and (best == nil or candidate.score > best.score) then
+            best = candidate
+        elseif reason ~= nil then
+            skip_reasons[reason] = (skip_reasons[reason] or 0) + 1
+        end
+    end
+
+    if best == nil then
+        local reason = "unsafe"
+
+        for key, count in pairs(skip_reasons) do
+            reason = key .. ":" .. count
+            break
+        end
+
+        return nil, reason
+    end
+
+    return best, nil
+end
+
+local function on_setup_command(cmd)
+    update_records()
+
+    if not ui.get(menu.enabled) then
+        set_status("off")
+        return
+    end
+
+    if not ui.get(menu.hotkey) then
+        set_status("hold")
+        state.active_targets = {}
+        return
+    end
+
+    local local_player = entity.get_local_player()
+
+    if local_player == nil or not entity.is_alive(local_player) then
+        set_status("dead")
+        state.active_targets = {}
+        return
+    end
+
+    local tick = globals.tickcount()
+
+    if tick < state.freeze_until_tick then
+        set_status("freeze")
+        state.active_targets = {}
+        return
+    end
+
+    local weapon_ctx = get_weapon_context(local_player)
+
+    if weapon_ctx == nil or not weapon_allowed(weapon_ctx.info) then
+        set_status("weapon")
+        state.active_targets = {}
+        return
+    end
+
+    local flags = entity.get_prop(local_player, "m_fFlags") or 0
+    local on_ground = bit.band(flags, bit.lshift(1, 0))
+
+    if cmd.in_jump == 1 and on_ground == 0 then
+        set_status("air")
+        state.active_targets = {}
+        return
+    end
+
+    if not can_attack_now(local_player, weapon_ctx) then
+        set_status("cooldown")
+        state.active_targets = {}
+        return
+    end
+
+    local eye_pos = get_eye_position()
+
+    if eye_pos == nil then
+        set_status("eye")
+        state.active_targets = {}
+        return
+    end
+
+    local candidate, reason = scan_targets(local_player, cmd, eye_pos)
+
+    if candidate == nil then
+        set_status("scan", reason or "no target")
+        return
+    end
+
+    state.active_targets[candidate.enemy] = true
+    state.last_candidate = candidate
+
+    local scoped = entity.get_prop(local_player, "m_bIsScoped") == 1
+
+    if INTERNAL_AUTOSCOPE
+        and not scoped
+        and weapon_ctx.info.type == "sniperrifle"
+        and cmd.in_jump == 0
+        and on_ground == 1
+    then
+        cmd.in_attack2 = 1
+    end
+
+    local speed = scoped and weapon_ctx.info.max_player_speed_alt or weapon_ctx.info.max_player_speed
+    clamp_movement(cmd, speed)
+
+    local inaccuracy = weapon_ctx.inaccuracy
+    local max_inaccuracy = ui.get(menu.max_inaccuracy) * 0.001
+
+    if inaccuracy == nil or inaccuracy > max_inaccuracy then
+        local prefix = candidate.predicted and "pred " or ""
+        set_status("ready", string.format("%s%s dmg %.0f hc %.0f%%", prefix, candidate.hitbox, candidate.damage, candidate.confidence * 100))
+        return
+    end
+
+    cmd.pitch = candidate.pitch
+    cmd.yaw = candidate.yaw
+    cmd.in_attack = 1
+
+    state.pending = {
+        enemy = candidate.enemy,
+        hitbox = candidate.hitbox,
+        point = candidate.point_name,
+        source = candidate.source,
+        damage = candidate.damage,
+        confidence = candidate.confidence,
+        fov = candidate.fov,
+        score = candidate.score,
+        predicted = candidate.predicted,
+        prediction_reason = candidate.prediction_reason,
+        prediction_shift = candidate.prediction_shift
+    }
+    state.pending_hit = false
+
+    local prefix = candidate.predicted and "pred " or ""
+    set_status("fire", string.format("%s%s/%s %.0fdmg %.1ffov", prefix, candidate.hitbox, candidate.point_name, candidate.damage, candidate.fov))
+end
+
+local function on_round_prestart()
+    local interval = globals.tickinterval()
+
+    if interval <= 0 then
+        state.freeze_until_tick = globals.tickcount()
+        return
+    end
+
+    state.freeze_until_tick = globals.tickcount() + (cvar.mp_freezetime:get_float() + 1) / interval
+    state.active_targets = {}
+    state.pending = nil
+    state.pending_hit = false
+end
+
+local function on_player_hurt(e)
+    if state.pending == nil then
+        return
+    end
+
+    local attacker = client.userid_to_entindex(e.attacker)
+
+    if attacker ~= entity.get_local_player() then
+        return
+    end
+
+    local victim = client.userid_to_entindex(e.userid)
+    local _, _, _, _, accuracy = entity.get_bounding_box(victim)
+
+    state.pending_hit = true
+
+    client.fire_event("da_hit", {
+        userid = victim,
+        attacker = attacker,
+        health = e.health,
+        armor = e.armor,
+        weapon = e.weapon,
+        dmg_health = e.dmg_health,
+        dmg_armor = e.dmg_armor,
+        hitgroup = e.hitgroup,
+        accuracy = accuracy or state.pending.confidence or 0,
+        aim_hitbox = state.pending.hitbox,
+        aim_point = state.pending.point,
+        source = state.pending.source,
+        predicted = state.pending.predicted,
+        prediction_shift = state.pending.prediction_shift,
+        predicted_damage = state.pending.damage
+    })
+end
+
+local function on_weapon_fire(e)
+    client.delay_call(0.04, function()
+        if client.userid_to_entindex(e.userid) ~= entity.get_local_player() then
+            return
+        end
+
+        if state.pending ~= nil and not state.pending_hit then
+            client.fire_event("da_miss", {
+                userid = state.pending.enemy,
+                aim_hitbox = state.pending.hitbox,
+                aim_point = state.pending.point,
+                source = state.pending.source,
+                predicted = state.pending.predicted,
+                prediction_shift = state.pending.prediction_shift,
+                damage = state.pending.damage,
+                accuracy = state.pending.confidence or 0,
+                fov = state.pending.fov or 0
+            })
+        end
+
+        state.pending = nil
+        state.pending_hit = false
+    end)
+end
+
+local function update_visibility()
+    local enabled = ui.get(menu.enabled)
+
+    for key, item in pairs(menu) do
+        if key ~= "enabled" then
+            ui.set_visible(item, enabled)
+        end
+    end
+end
+
+local function update_runtime_callbacks()
+    local enabled = ui.get(menu.enabled)
+
+    if enabled and ref_dormant_esp ~= nil then
+        ui.set(ref_dormant_esp, true)
+    end
+
+    if enabled ~= runtime_callbacks_enabled then
+        local fn = enabled and client.set_event_callback or client.unset_event_callback
+
+        fn("setup_command", on_setup_command)
+        fn("round_prestart", on_round_prestart)
+        fn("player_hurt", on_player_hurt)
+
+        runtime_callbacks_enabled = enabled
+    end
+
+    if not enabled then
+        state.active_targets = {}
+        state.pending = nil
+        state.pending_hit = false
+        set_status("off")
+    end
+
+    update_visibility()
+end
+
+client.register_esp_flag("DA", 120, 205, 255, function(enemy)
+    local local_player = entity.get_local_player()
+
+    if not ui.get(menu.enabled) or local_player == nil or not entity.is_alive(local_player) then
+        return false
+    end
+
+    return state.active_targets[enemy] == true
 end)
-client.set_event_callback("weapon_fire", function(arg_9_0)
-	client.delay_call(0.03, function()
-		local var_10_0 = entity.get_local_player()
 
-		if client.userid_to_entindex(arg_9_0.userid) == var_10_0 then
-			if var_0_53 and not var_0_58 then
-				client.fire_event("dormant_miss", {
-					userid = var_0_56,
-					aim_hitbox = var_0_54,
-					aim_point = var_0_55,
-					accuracy = var_0_57
-				})
-			end
-
-			var_0_58 = false
-			var_0_53 = false
-			var_0_54 = nil
-			var_0_55 = nil
-			var_0_56 = nil
-			var_0_57 = nil
-		end
-	end)
-end)
-
-local function var_0_60(arg_11_0)
-	local var_11_0 = client.userid_to_entindex(arg_11_0.userid)
-	local var_11_1 = client.userid_to_entindex(arg_11_0.attacker)
-	local var_11_2, var_11_3, var_11_4, var_11_5, var_11_6 = entity.get_bounding_box(client.userid_to_entindex(arg_11_0.userid))
-
-	if var_11_1 == entity.get_local_player() and var_11_0 ~= nil and var_0_53 == true then
-		var_0_58 = true
-
-		client.fire_event("dormant_hit", {
-			userid = var_11_0,
-			attacker = var_11_1,
-			health = arg_11_0.health,
-			armor = arg_11_0.armor,
-			weapon = arg_11_0.weapon,
-			dmg_health = arg_11_0.dmg_health,
-			dmg_armor = arg_11_0.dmg_armor,
-			hitgroup = arg_11_0.hitgroup,
-			accuracy = var_11_6,
-			aim_hitbox = var_0_54
-		})
-	end
-end
-
-local function var_0_61()
-	local var_12_0 = (cvar.mp_freezetime:get_float() + 1) / globals.tickinterval()
-
-	var_0_47 = var_0_15() + var_12_0
-end
-
-local function var_0_62()
-	local var_13_0 = ui.get(var_0_36)
-
-	for iter_13_0, iter_13_1 in pairs(var_0_38) do
-		ui.set_visible(iter_13_1, var_13_0)
-	end
-end
-
-var_0_23(var_0_36, function()
-	local var_14_0 = var_0_19(var_0_36)
-	local var_14_1 = var_14_0 and client.set_event_callback or client.unset_event_callback
-
-	if var_14_0 then
-		ui.set(var_0_35.dormantEsp, var_14_0)
-	end
-
-	var_14_1("setup_command", var_0_59)
-	var_14_1("round_prestart", var_0_61)
-	var_14_1("player_hurt", var_0_60)
-	var_0_62()
-end)
-var_0_62()
-
-local var_0_63 = 255
-local var_0_64 = 0
-local var_0_65 = 0
-local var_0_66 = 255
-local var_0_67 = 255
-local var_0_68 = 255
-local var_0_69 = 255
-local var_0_70 = 10
-local var_0_71 = {
-	0,
-	3,
-	4,
-	5,
-	6,
-	7,
-	8,
-	9,
-	10,
-	11,
-	12,
-	15,
-	16,
-	17,
-	18
-}
+client.set_event_callback("weapon_fire", on_weapon_fire)
 
 client.set_event_callback("paint", function()
-	local var_15_0 = ({
-		var_0_19(var_0_38.dormantKey)
-	})[2]
+    if ui.get(menu.enabled) then
+        update_records()
+    end
 
-	if not var_0_26(var_0_5()) then
-		return
-	end
+    local local_player = entity.get_local_player()
 
-	if var_0_19(var_0_36) and var_0_19(var_0_38.dormantKey) and var_0_19(var_0_38.dormantIndicator) then
-		local var_15_1 = {
-			255,
-			255,
-			255,
-			200
-		}
+    if local_player == nil or not entity.is_alive(local_player) then
+        return
+    end
 
-		for iter_15_0, iter_15_1 in pairs(var_0_48) do
-			if iter_15_1 then
-				var_15_1 = {
-					143,
-					194,
-					21,
-					255
-				}
+    -- Keep the original compact Cryonova DA indicator: no debug/test values.
+    if ui.get(menu.enabled) and ui.get(menu.hotkey) and ui.get(menu.debug) then
+        local r, g, b, a = 255, 255, 255, 200
 
-				break
-			end
-		end
+        if next(state.active_targets) ~= nil then
+            r, g, b, a = 143, 194, 21, 255
+        end
 
-		if #var_0_45() == 0 then
-			var_15_1 = {
-				255,
-				0,
-				50,
-				255
-			}
-		end
+        if #get_dormant_enemies() == 0 then
+            r, g, b, a = 255, 0, 50, 255
+        end
 
-		var_0_17(var_15_1[1], var_15_1[2], var_15_1[3], var_15_1[4], "DA")
-	end
+        renderer.indicator(r, g, b, a, "DA")
+    end
 
-	if var_0_19(var_0_38.dormantlastseen) then
-		for iter_15_2, iter_15_3 in ipairs(var_0_49) do
-			local var_15_2 = var_0_30(entity.get_origin(iter_15_3[1]))
-			local var_15_3 = var_0_30(var_0_28(iter_15_3[1], 4))
-			local var_15_4, var_15_5, var_15_6, var_15_7, var_15_8 = entity.get_bounding_box(iter_15_3[1])
-			local var_15_9, var_15_10, var_15_11, var_15_12 = var_0_19(var_0_38.dormantlastseencolor)
+    if ui.get(menu.enabled) and ui.get(menu.draw_last_seen) then
+        local r, g, b, a = ui.get(menu.draw_color)
 
-			if var_15_8 > 0 and entity.is_dormant(iter_15_3[1]) and math.abs(var_15_2.x - var_15_3.x) < 7 then
-				client.draw_hitboxes(iter_15_3[1], 0.06, var_0_71, var_15_9, var_15_10, var_15_11, math.min(var_15_12, var_15_8 / 10 * var_15_12), globals.tickcount())
-			end
-		end
-	end
-end)
-client.set_event_callback("dormant_hit", function(arg_16_0)
-	if var_0_19(var_0_38.dormantLogs) then
-		local var_16_0 = entity.get_player_name(arg_16_0.userid)
+        for enemy, record in pairs(state.records) do
+            local age = get_record_age(record)
 
-		if var_0_40[arg_16_0.hitgroup + 1] == arg_16_0.aim_hitbox or var_0_54 == "Head" then
-			print(string.format("[DA] Hit %s in the %s for %i damage (%i health remaining) (%s accuracy)", var_16_0, var_0_39[arg_16_0.hitgroup + 1], arg_16_0.dmg_health, arg_16_0.health, string.format("%.0f", arg_16_0.accuracy * 100) .. "%"))
-		else
-			print(string.format("[DA] Hit %s in the %s for %i damage (%i health remaining) aimed=%s (%s accuracy)", var_16_0, var_0_39[arg_16_0.hitgroup + 1], arg_16_0.dmg_health, arg_16_0.health, arg_16_0.aim_hitbox, string.format("%.0f", arg_16_0.accuracy * 100) .. "%"))
-		end
-	end
-end)
-client.set_event_callback("dormant_miss", function(arg_17_0)
-	if var_0_19(var_0_38.dormantLogs) then
-		local var_17_0 = entity.get_player_name(arg_17_0.userid)
+            if record.origin ~= nil
+                and record.body ~= nil
+                and age <= ui.get(menu.max_age)
+                and entity.is_alive(enemy)
+                and entity.is_dormant(enemy)
+            then
+                local alpha = math.max(0, math.min(a, a * (1 - age / math.max(ui.get(menu.max_age), 1))))
 
-		if var_0_55 ~= nil then
-			print(string.format("[DA] Missed %s's %s (mp=%s) (%s accuracy)", var_17_0, var_0_54, var_0_55, string.format("%.0f", arg_17_0.accuracy * 100) .. "%"))
-		else
-			print(string.format("[DA] Missed %s's %s (%s accuracy)", var_17_0, var_0_54, string.format("%.0f", arg_17_0.accuracy * 100) .. "%"))
-		end
-	end
+                if alpha > 1 then
+                    client.draw_hitboxes(enemy, 0.06, draw_hitboxes, r, g, b, alpha, globals.tickcount())
+                end
+            end
+        end
+    end
 end)
 
+client.set_event_callback("da_hit", function(e)
+    if not ui.get(menu.logs) then
+        return
+    end
+
+    local name = entity.get_player_name(e.userid) or "unknown"
+    local hitgroup = hitgroup_names[(e.hitgroup or 0) + 1] or "?"
+    local expected = hitgroup_to_hitbox[(e.hitgroup or 0) + 1]
+    local accuracy = string.format("%.0f", (e.accuracy or 0) * 100) .. "%"
+
+    if expected == e.aim_hitbox or e.aim_hitbox == "Head" then
+        log_debug(string.format("Hit %s in %s for %i (%i hp) via %s/%s [%s]", name, hitgroup, e.dmg_health or 0, e.health or 0, e.aim_hitbox or "?", e.aim_point or "?", accuracy))
+    else
+        log_debug(string.format("Hit %s in %s for %i (%i hp), aimed %s via %s [%s]", name, hitgroup, e.dmg_health or 0, e.health or 0, e.aim_hitbox or "?", e.source or "?", accuracy))
+    end
+end)
+
+client.set_event_callback("da_miss", function(e)
+    if not ui.get(menu.logs) then
+        return
+    end
+
+    local name = entity.get_player_name(e.userid) or "unknown"
+    local accuracy = string.format("%.0f", (e.accuracy or 0) * 100) .. "%"
+
+    log_debug(string.format("Missed %s %s/%s via %s, predicted %.0f dmg, %.1f fov [%s]", name, e.aim_hitbox or "?", e.aim_point or "?", e.source or "?", e.damage or 0, e.fov or 0, accuracy))
+end)
+
+ui.set_callback(menu.enabled, update_runtime_callbacks)
+update_runtime_callbacks()
 end
 
 do
 -- Menu
 local tracer = ui.new_checkbox("VISUALS", "Effects", "Bullet tracers redux")
 local color = ui.new_color_picker("VISUALS", "Effects", "Color", 255, 255, 255, 255)
+
+cryonova_queue_config_item("Changers", "extensions.bullet_tracers.enabled", tracer)
+cryonova_queue_config_item("Changers", "extensions.bullet_tracers.color", color)
 
 -- Variables and constants
 local queue = {}
@@ -2213,6 +2873,11 @@ local cryonova_health_bar do
         label2 = ui.new_label('VISUALS', 'Player ESP', 'Empty Health'),
         colorpicker2 = ui.new_color_picker('VISUALS', 'Player ESP', 'Empty Health', 244, 48, 87, 255)
     }
+
+    cryonova_queue_config_item("Changers", "extensions.health_bar.enabled", hpbar.customhealthbars)
+    cryonova_queue_config_item("Changers", "extensions.health_bar.gradient", hpbar.gradient)
+    cryonova_queue_config_item("Changers", "extensions.health_bar.full_color", hpbar.colorpicker)
+    cryonova_queue_config_item("Changers", "extensions.health_bar.empty_color", hpbar.colorpicker2)
 
     local players = { }
     local standard_health_bar = ui.reference('VISUALS', 'Player ESP', 'Health bar')
@@ -2391,6 +3056,11 @@ local codex_visuals do
         tracers = ui.new_checkbox("VISUALS", "Effects", "Extra impact glow"),
         dormant = ui.new_checkbox("VISUALS", "Player ESP", "Dormant pulse marker")
     }
+
+    cryonova_queue_config_item("Changers", "extensions.codex_visuals.enabled", ref.enabled)
+    cryonova_queue_config_item("Changers", "extensions.codex_visuals.color", ref.color)
+    cryonova_queue_config_item("Changers", "extensions.codex_visuals.impact_glow", ref.tracers)
+    cryonova_queue_config_item("Changers", "extensions.codex_visuals.dormant_marker", ref.dormant)
 
     ui.set(ref.tracers, true)
     ui.set(ref.dormant, true)
@@ -4998,7 +5668,6 @@ rkJggg==
         if type(paths) ~= 'table' then
             return nil
         end
-
         for i = 1, #paths do
             local ok, bytes = pcall(readfile, paths[i])
 
@@ -6225,6 +6894,67 @@ local config_system do
 
     local item_list = { }
     local item_data = { }
+    local deferred_import_data = { }
+
+    local function wrap_raw_item(item)
+        if item == nil then
+            return nil
+        end
+
+        if type(item) == 'table'
+            and item.type ~= nil
+            and type(item.get) == 'function'
+            and type(item.set) == 'function'
+        then
+            return item
+        end
+
+        local ok, item_type = pcall(ui.type, item)
+
+        if not ok or item_type == nil then
+            return nil
+        end
+
+        return {
+            ref = item,
+            type = item_type,
+            get = function(self)
+                return ui.get(self.ref)
+            end,
+            set = function(self, ...)
+                return ui.set(self.ref, ...)
+            end
+        }
+    end
+
+    local function apply_deferred_value(tab, name, item)
+        local values = deferred_import_data[tab]
+
+        if values == nil then
+            return
+        end
+
+        local value = values[name]
+
+        if value == nil then
+            return
+        end
+
+        pcall(item.set, item, unpack(value))
+        values[name] = nil
+
+        if next(values) == nil then
+            deferred_import_data[tab] = nil
+        end
+    end
+
+    local function remember_deferred_value(tab, name, value)
+        if deferred_import_data[tab] == nil then
+            deferred_import_data[tab] = { }
+        end
+
+        deferred_import_data[tab][name] = value
+    end
 
     local function get_item_value(item)
         if item.type == 'hotkey' then
@@ -6249,6 +6979,12 @@ local config_system do
     end
 
     function config_system.push(tab, name, item)
+        item = wrap_raw_item(item)
+
+        if item == nil then
+            return nil
+        end
+
         if item_data[tab] == nil then
             item_data[tab] = { }
         end
@@ -6269,7 +7005,34 @@ local config_system do
         item_data[tab][name] = item
         table.insert(item_list, data)
 
+        apply_deferred_value(tab, name, item)
+
         return item
+    end
+
+    function config_system.register_pending_items()
+        for i = 1, #cryonova_pending_config_items do
+            local entry = cryonova_pending_config_items[i]
+
+            if entry ~= nil and not entry.registered then
+                local ok, registered_item = pcall(
+                    config_system.push,
+                    entry.category,
+                    entry.key,
+                    entry.ref
+                )
+
+                if ok and registered_item ~= nil then
+                    entry.registered = true
+                else
+                    client.error_log(string.format(
+                        'Failed to register config item: %s.%s',
+                        tostring(entry.category),
+                        tostring(entry.key)
+                    ))
+                end
+            end
+        end
     end
 
     function config_system.encode(data)
@@ -6340,9 +7103,17 @@ local config_system do
                 goto continue
             end
 
+            -- Replace any deferred values from an older config load. This keeps
+            -- late-created controls in sync with the config that was loaded last.
+            deferred_import_data[k] = nil
+
             local items = item_data[k]
 
             if items == nil then
+                for m, n in pairs(v) do
+                    remember_deferred_value(k, m, n)
+                end
+
                 goto continue
             end
 
@@ -6351,6 +7122,8 @@ local config_system do
 
                 if item ~= nil then
                     pcall(item.set, item, unpack(n))
+                else
+                    remember_deferred_value(k, m, n)
                 end
             end
 
@@ -6384,6 +7157,10 @@ local config_system do
         return list
     end
 end
+
+-- Register controls created by the bundled extensions before the custom menu
+-- builder is initialized. Existing configs can now restore them as well.
+config_system.register_pending_items()
 
 local menu do
     menu = { }
@@ -6998,7 +7775,6 @@ local exploit do
     local data = {
         old_origin = vector(),
         old_simtime = 0.0,
-
         shift = false,
         breaking_lc = false,
 
@@ -7875,21 +8651,9 @@ local resource do
                 alpha_resolver.debug_indicator:set(true)
                 alpha_resolver.debug_line:set(true)
 
-                alpha_resolver.defensive = config_system.push(
-                    'Ragebot', 'alpha_resolver.defensive', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Defensive anti-aim resolver', 'alpha_resolver')
-                    )
-                )
-
                 alpha_resolver.backtrack = config_system.push(
                     'Ragebot', 'alpha_resolver.backtrack', menu.new(
                         ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Backtrack exploit', 'alpha_resolver')
-                    )
-                )
-
-                alpha_resolver.flick = config_system.push(
-                    'Ragebot', 'alpha_resolver.flick', menu.new(
-                        ui.new_checkbox, 'AA', 'Anti-aimbot angles', new_key('Flick exploit resolver', 'alpha_resolver')
                     )
                 )
 
@@ -7998,7 +8762,6 @@ local resource do
                             ui.new_multiselect, 'AA', 'Other', new_key('Options', hash 'options'), new_option_list
                         )
                     )
-
                     for j = 1, #new_option_list do
                         local option = new_option_list[j]
 
@@ -9389,6 +10152,9 @@ local resource do
                             'Moving',
                             'Slow Walk',
                             'Air',
+                            'Air-Crouch',
+                            'Crouch',
+                            'Move-Crouch',
                             'Crouched'
                         }
                     )
@@ -10998,7 +11764,6 @@ local resource do
                     end
                 end
             end
-
             if items.separator_1 ~= nil then
                 menu_logic.set(items.separator_1, true)
             end
@@ -11179,9 +11944,7 @@ local resource do
 
                 local alpha_resolver = ref.alpha_resolver do
                     menu_logic.set(alpha_resolver.enabled, true)
-                    menu_logic.set(alpha_resolver.defensive, true)
                     menu_logic.set(alpha_resolver.backtrack, true)
-                    menu_logic.set(alpha_resolver.flick, true)
 
                     if alpha_resolver.enabled:get() then
                         local resolver_mode = alpha_resolver.mode:get()
@@ -13381,15 +14144,16 @@ local main do
                 return damage
             end
 
-            local function simulate_damage(start_pos, end_pos, enemy, hitgroup, weapon)
-                local data = csgo_weapons(weapon)
+            -- weapon_data is resolved once per command and reused for every enemy.
+            -- The damage formula and all Force body conditions stay unchanged.
+            local function simulate_damage(start_pos, end_pos, enemy, hitgroup, weapon_data)
                 local delta = end_pos - start_pos
 
-                local damage = data.damage
-                local armor_ratio = data.armor_ratio
+                local damage = weapon_data.damage
+                local armor_ratio = weapon_data.armor_ratio
 
-                local range = data.range
-                local range_modifier = data.range_modifier
+                local range = weapon_data.range
+                local range_modifier = weapon_data.range_modifier
 
                 local length = math.min(range, delta:length())
 
@@ -13399,16 +14163,14 @@ local main do
                 return damage
             end
 
-            local function is_lethal(start_pos, end_pos, enemy, hitgroup, weapon)
-                local damage = simulate_damage(start_pos, end_pos, enemy, hitgroup, weapon)
+            local function is_lethal(start_pos, end_pos, enemy, hitgroup, weapon_data)
+                local damage = simulate_damage(start_pos, end_pos, enemy, hitgroup, weapon_data)
                 local health = entity.get_prop(enemy, 'm_iHealth')
 
                 return damage >= health
             end
 
-            local function get_weapon_type(weapon)
-                local weapon_info = csgo_weapons(weapon)
-
+            local function get_weapon_type(weapon_info)
                 if weapon_info == nil then
                     return nil
                 end
@@ -13465,55 +14227,79 @@ local main do
                     return
                 end
 
-                local weapon_type = get_weapon_type(weapon)
+                -- csgo_weapons was previously called once per enemy through
+                -- simulate_damage. Resolve it once: its data is the same for
+                -- all targets during this command.
+                local weapon_data = csgo_weapons(weapon)
+                local weapon_type = get_weapon_type(weapon_data)
 
                 if weapon_type == nil or not ref.weapons:get(weapon_type) then
                     return
                 end
 
-                local max_misses = ref.max_misses:get()
-
-                local eye_pos = vector(client.eye_position())
-                local my_health = entity.get_prop(me, 'm_iHealth')
-
                 local is_max_misses = ref.conditions:get 'Max misses'
                 local is_enemy_lethal = ref.conditions:get 'Enemy lethal'
+
+                -- With no selected conditions the old code still iterated all
+                -- enemies and requested hitboxes. There is nothing to apply.
+                if not is_max_misses and not is_enemy_lethal then
+                    return
+                end
+
+                local max_misses = is_max_misses and ref.max_misses:get() or 0
+                local eye_pos = is_enemy_lethal and vector(client.eye_position()) or nil
+
+                -- Scout damage is only relevant for the Max misses condition.
+                -- Cache both values once instead of reading them for every target.
+                local scout_damage = 0
+                local my_health = nil
+
+                if is_max_misses and weapon_type == 'Scout' then
+                    scout_damage = ref.scout_damage:get()
+
+                    if scout_damage > 0 then
+                        my_health = entity.get_prop(me, 'm_iHealth')
+                    end
+                end
 
                 local enemies = entity.get_players(true)
 
                 for i = 1, #enemies do
                     local enemy = enemies[i]
-
                     local player_data = get_or_create_player_data(enemy)
-
-                    local stomach = vector(
-                        entity.hitbox_position(enemy, 5)
-                    )
 
                     local was_max_misses = is_max_misses
                         and player_data.misses >= max_misses
 
-                    local was_is_enemy_lethal = is_enemy_lethal
-                        and is_lethal(eye_pos, stomach, enemy, 3, weapon)
+                    -- A max-misses target was already forced in the old code,
+                    -- so avoid its unnecessary hitbox/damage calculation.
+                    local was_is_enemy_lethal = false
 
-                    local is_force_body = (
-                        was_max_misses or
-                        was_is_enemy_lethal
-                    )
+                    if not was_max_misses and is_enemy_lethal then
+                        local x, y, z = entity.hitbox_position(enemy, 5)
+
+                        if x ~= nil then
+                            was_is_enemy_lethal = is_lethal(
+                                eye_pos,
+                                vector(x, y, z),
+                                enemy,
+                                HITGROUP_STOMACH,
+                                weapon_data
+                            )
+                        end
+                    end
+
+                    local is_force_body = was_max_misses or was_is_enemy_lethal
 
                     if is_force_body then
                         manipulation.set(enemy, 'Override prefer body aim', 'Force')
 
-                        if was_max_misses and weapon_type == 'Scout' then
-                            local damage = ref.scout_damage:get()
-
-                            local should_change_min_damage = (
-                                my_health == 100 and damage > 0
-                            )
-
-                            if should_change_min_damage then
-                                ragebot.set(ref_minimum_damage, damage)
-                            end
+                        if was_max_misses
+                            and weapon_type == 'Scout'
+                            and my_health == 100
+                            and scout_damage > 0
+                        then
+                            ragebot.set(ref_minimum_damage, scout_damage)
                         end
                     end
 
@@ -13828,36 +14614,41 @@ local main do
                 ui.reference('AA', 'Other', 'On shot anti-aim')
             }
 
+            -- High-frequency aliases: this callback runs every command while
+            -- Auto hide shots is enabled, so avoid repeated global table lookups.
+            local ui_get = ui.get
+            local get_local_player = entity.get_local_player
+            local get_player_weapon = entity.get_player_weapon
+            local get_weapon_info = csgo_weapons
+
+            -- Kept only to avoid repeating unset calls on every command once
+            -- Auto hide shots has already released its own overrides.
+            -- The active path still reapplies overrides every command so its
+            -- priority and in-game behavior remain unchanged.
+            local values_applied = false
+
             local function get_state()
-                if not localplayer.is_onground then
-                    if localplayer.is_crouched then
-                        return 'Air-Crouch'
-                    end
+                local is_onground = localplayer.is_onground
+                local is_crouched = localplayer.is_crouched
+                local is_moving = localplayer.is_moving
 
-                    return 'Air'
+                if not is_onground then
+                    return is_crouched and 'Air-Crouch' or 'Air'
                 end
 
-                if localplayer.is_crouched then
-                    if localplayer.is_moving then
-                        return 'Move-Crouch'
-                    end
-
-                    return 'Crouch'
+                if is_crouched then
+                    return is_moving and 'Move-Crouch' or 'Crouch'
                 end
 
-                if localplayer.is_moving then
-                    if software.is_slow_motion() then
-                        return 'Slow Walk'
-                    end
-
-                    return 'Moving'
+                if is_moving then
+                    return software.is_slow_motion() and 'Slow Walk' or 'Moving'
                 end
 
                 return 'Standing'
             end
 
             local function get_weapon_type(weapon)
-                local weapon_info = csgo_weapons(weapon)
+                local weapon_info = get_weapon_info(weapon)
 
                 if weapon_info == nil then
                     return nil
@@ -13901,11 +14692,17 @@ local main do
                 return nil
             end
 
-            local function restore_values()
+            local function restore_values(force)
+                if not force and not values_applied then
+                    return
+                end
+
                 ragebot.unset(ref_double_tap[1])
 
                 override.unset(ref_on_shot_antiaim[1])
                 override.unset(ref_on_shot_antiaim[2])
+
+                values_applied = false
             end
 
             local function update_values()
@@ -13913,33 +14710,33 @@ local main do
 
                 override.set(ref_on_shot_antiaim[1], true)
                 override.set(ref_on_shot_antiaim[2], 'Always on')
+
+                values_applied = true
             end
 
             local function should_update()
-                if ui.get(ref_duck_peek_assist) then
+                -- These cheap blockers are intentionally checked first.
+                if ui_get(ref_duck_peek_assist) then
                     return false
                 end
 
-                local is_quick_peek_assist = (
-                    ui.get(ref_quick_peek_assist[1]) and
-                    ui.get(ref_quick_peek_assist[2])
-                )
-
-                if is_quick_peek_assist then
+                if ui_get(ref_quick_peek_assist[1])
+                    and ui_get(ref_quick_peek_assist[2])
+                then
                     return false
                 end
 
-                if not ui.get(ref_double_tap[2]) then
+                if not ui_get(ref_double_tap[2]) then
                     return false
                 end
 
-                local me = entity.get_local_player()
+                local me = get_local_player()
 
                 if me == nil then
                     return false
                 end
 
-                local weapon = entity.get_player_weapon(me)
+                local weapon = get_player_weapon(me)
 
                 if weapon == nil then
                     return false
@@ -13951,24 +14748,21 @@ local main do
                     return false
                 end
 
-                local state = get_state()
-
-                if not ref.states:get(state) then
-                    return false
-                end
-
-                return true
+                return ref.states:get(get_state())
             end
 
             local function on_shutdown()
-                restore_values()
+                -- Force cleanup even if the callback never became active.
+                restore_values(true)
             end
 
             local function on_setup_command()
                 if should_update() then
+                    -- Preserve the original per-command application while active.
                     update_values()
                 else
-                    restore_values()
+                    -- Unset only on the active -> inactive transition.
+                    restore_values(false)
                 end
             end
 
@@ -13977,7 +14771,8 @@ local main do
                     local value = item:get()
 
                     if not value then
-                        restore_values()
+                        -- Also clears an override left by a config reload.
+                        restore_values(true)
                     end
 
                     utils.event_callback(
@@ -13998,7 +14793,6 @@ local main do
                 )
             end
         end
-
         local allow_duck_on_fd do
             local ref = resource.main.ragebot.allow_duck_on_fd
 
@@ -16998,7 +17792,6 @@ local main do
                     {
                         { 'ДА СУКА Я ЖЕ С Cryonova КАК ТАК?', 1.3 },
                     },
-
                     {
                         { 'блять ебаный абрыгажник снова тапнул бичпакет ебучий', 1.6 },
                     },
@@ -19062,8 +19855,6 @@ local function on_player_hurt(e)
             resolver_memory = { },
             resolver_current_yaw = { },
             bruteforce_cycle = { },
-            flick = { },
-            flick_misses = { },
             debug = {
                 selected_target = nil,
                 selected_fov = 0,
@@ -19074,10 +19865,7 @@ local function on_player_hurt(e)
                 side_names = { },
                 deltas = { }
             },
-            defensive = { },
-            resolver_active = false,
-            flick_active = false,
-            defensive_active = false
+            resolver_active = false
         }
 
         local function time_to_ticks(time)
@@ -19357,21 +20145,6 @@ local function on_player_hurt(e)
 
             return 'static', delta, 0
         end
-
-        local function create_flick_record()
-            return {
-                simtime = 0,
-                prev_eye_yaw = 0,
-                eye_yaw = 0,
-                prev_lby = 0,
-                lby = 0,
-                prev_pitch = 0,
-                pitch = 0,
-                side = 0,
-                flick_until = 0,
-                confidence = 0
-            }
-        end
         -- Resolver strategies: Cryonova and Sauron.
 
         local ok_resolver_weapons, resolver_weapons_db = pcall(require, 'gamesense/csgo_weapons')
@@ -19450,193 +20223,530 @@ local function on_player_hurt(e)
 
             return group == 'AWP' or group == 'Auto'
         end
+        -- Sauron Hybrid Resolver
+        --
+        -- This replaces the old three-step Sauron cycle with one resolver that
+        -- keeps the stable Cryonova integration, adds Rinnegun-style jitter /
+        -- choke sampling and learned yaw selection, and deliberately avoids
+        -- unsafe resolver patterns from the other scripts (writing enemy
+        -- netvars, random yaw selection and forced simulation-time edits).
+        local SAURON_SAMPLE_BUFFER = 8
+        local SAURON_JITTER_THRESHOLD = 32
+        local SAURON_MIN_DELTA = 18
+        local SAURON_MAX_DELTA = 58
+
         local sauron_state = { }
         local sauron_memory = { }
-        local sauron_side_presets = {
-            default = { 44, -44, 0 },
-            stand = { 44, -17, 15 },
-            slow = { 44, -17, 15 }
-        }
-        local sauron_default_side = {
-            default = 0,
-            stand = 0,
-            slow = 15
-        }
+        local sauron_shots = { }
+
+        local function sauron_normalize_yaw(value)
+            return utils.normalize(value or 0, -180, 180)
+        end
+
+        local function sauron_angle_difference(destination, source)
+            return sauron_normalize_yaw((destination or 0) - (source or 0))
+        end
+
+        local function sauron_new_stage_memory()
+            return {
+                hits = { },
+                misses = { },
+                best_yaw = nil,
+                best_hits = 0,
+                cycle = 0,
+                resolved = false,
+                resolved_yaw = 0
+            }
+        end
+
+        local function sauron_new_player_state()
+            return {
+                active = false,
+                stage = 'default',
+                delta = 0,
+                current_yaw = 0,
+                source = 'idle',
+                last_velocity = 0,
+                last_simtime = nil,
+                choked = 0,
+                yaw_samples = { },
+                sample_index = 1,
+                sample_count = 0,
+                jittering = false,
+                jitter_delta = 0,
+                jitter_side = 0
+            }
+        end
+
+        local function sauron_new_memory()
+            local stages = { 'default', 'stand', 'slow', 'move', 'air' }
+            local memory = {
+                stages = { },
+                side = { },
+                resolved_side = { },
+                resolved = { }
+            }
+
+            for i = 1, #stages do
+                local stage = stages[i]
+                memory.stages[stage] = sauron_new_stage_memory()
+                memory.side[stage] = 0
+                memory.resolved_side[stage] = 0
+                memory.resolved[stage] = false
+            end
+
+            return memory
+        end
 
         local function sauron_reset(full)
-            for i = 1, 64 do
-                sauron_state[i] = {
-                    active = false,
-                    stage = 'default',
-                    delta = 0,
-                    shots = 0,
-                    last_vel = 0,
-                    tick_to = 0
-                }
+            sauron_shots = { }
 
+            for i = 1, 64 do
+                sauron_state[i] = sauron_new_player_state()
                 set_resolver_targeting_overrides(i, false)
 
                 if full or sauron_memory[i] == nil then
-                    sauron_memory[i] = {
-                        side = { },
-                        resolved_side = { },
-                        resolved = { }
-                    }
-
-                    for stage, value in pairs(sauron_default_side) do
-                        sauron_memory[i].side[stage] = value
-                        sauron_memory[i].resolved_side[stage] = value
-                        sauron_memory[i].resolved[stage] = false
-                    end
+                    sauron_memory[i] = sauron_new_memory()
                 end
             end
         end
 
-        local function sauron_select_side(delta, enemy, invert)
-            local stage = sauron_state[enemy] and sauron_state[enemy].stage or 'default'
-            local preset = sauron_side_presets[stage] or sauron_side_presets.default
-
-            if delta >= 0 and delta < 16 then
-                return invert and preset[1] or preset[3]
+        local function sauron_stage_memory(memory, stage)
+            if memory.stages[stage] == nil then
+                memory.stages[stage] = sauron_new_stage_memory()
+                memory.side[stage] = 0
+                memory.resolved_side[stage] = 0
+                memory.resolved[stage] = false
             end
 
-            if delta > 0 then
-                return invert and preset[2] or preset[1]
-            end
-
-            if delta < 0 then
-                return invert and preset[3] or preset[2]
-            end
-
-            return preset[3]
+            return memory.stages[stage]
         end
 
-        local function sauron_update_stage(enemy)
-            local player = sauron_state[enemy]
+        local function sauron_push_yaw_sample(player, yaw)
+            player.yaw_samples[player.sample_index] = sauron_normalize_yaw(yaw)
+            player.sample_index = (player.sample_index % SAURON_SAMPLE_BUFFER) + 1
+            player.sample_count = math.min(player.sample_count + 1, SAURON_SAMPLE_BUFFER)
+        end
 
-            if player == nil then
+        local function sauron_sample_at(player, order)
+            if order < 1 or order > player.sample_count then
+                return nil
+            end
+
+            local first_slot = player.sample_count < SAURON_SAMPLE_BUFFER
+                and 1
+                or player.sample_index
+            local slot = ((first_slot + order - 2) % SAURON_SAMPLE_BUFFER) + 1
+
+            return player.yaw_samples[slot]
+        end
+
+        local function sauron_update_jitter(player)
+            if player.sample_count < 3 then
+                player.jittering = false
+                player.jitter_delta = 0
+                player.jitter_side = 0
+                return false
+            end
+
+            local total_delta = 0
+            local compared = 0
+            local alternating = 0
+            local previous_delta = nil
+            local last_delta = 0
+
+            for i = 2, player.sample_count do
+                local previous = sauron_sample_at(player, i - 1)
+                local current = sauron_sample_at(player, i)
+
+                if previous ~= nil and current ~= nil then
+                    local delta = sauron_angle_difference(current, previous)
+
+                    total_delta = total_delta + math.abs(delta)
+                    compared = compared + 1
+                    last_delta = delta
+
+                    if previous_delta ~= nil
+                        and delta * previous_delta < 0
+                        and math.abs(delta) >= SAURON_JITTER_THRESHOLD
+                    then
+                        alternating = alternating + 1
+                    end
+
+                    previous_delta = delta
+                end
+            end
+
+            local average_delta = compared > 0 and total_delta / compared or 0
+
+            player.jitter_delta = average_delta
+            player.jittering = average_delta >= SAURON_JITTER_THRESHOLD and alternating >= 1
+            player.jitter_side = player.jittering and (last_delta >= 0 and 1 or -1) or 0
+
+            return player.jittering
+        end
+
+        local function sauron_update_network_state(enemy, player, eye_yaw)
+            local simulation_time = entity.get_prop(enemy, 'm_flSimulationTime')
+
+            if simulation_time == nil then
+                player.choked = 0
                 return
             end
 
+            if player.last_simtime == nil then
+                player.last_simtime = simulation_time
+                player.choked = 0
+                sauron_push_yaw_sample(player, eye_yaw)
+                sauron_update_jitter(player)
+                return
+            end
+
+            if simulation_time ~= player.last_simtime then
+                local elapsed = simulation_time - player.last_simtime
+                local interval = globals.tickinterval()
+                local ticks = interval > 0 and math.floor(elapsed / interval + 0.5) or 1
+
+                player.last_simtime = simulation_time
+                player.choked = utils.clamp(ticks - 1, 0, 14)
+
+                sauron_push_yaw_sample(player, eye_yaw)
+                sauron_update_jitter(player)
+            end
+        end
+
+        local function sauron_get_stage(enemy, player)
             local vx, vy = entity.get_prop(enemy, 'm_vecVelocity')
             local flags = entity.get_prop(enemy, 'm_fFlags') or 0
             local duck = entity.get_prop(enemy, 'm_flDuckAmount') or 0
+
             vx, vy = vx or 0, vy or 0
 
-            local speed = math.floor(math.min(10000, math.sqrt(vx * vx + vy * vy) + 0.5))
-            local slow_move = speed > 3 and speed < 85 and duck == 0 and bit.band(flags, 1) == 1
+            local speed = math.sqrt(vx * vx + vy * vy)
+            local on_ground = bit.band(flags, 1) == 1
 
-            if slow_move then
-                if player.tick_to < globals.tickcount() then
-                    for offset = -3, 3 do
-                        if player.last_vel + offset == speed then
-                            return
-                        end
+            player.last_velocity = speed
 
-                        if offset == 3 then
-                            player.tick_to = 0
-                        end
-                    end
-                end
-
-                if player.tick_to == globals.tickcount() then
-                    player.stage = 'slow'
-                end
-
-                player.tick_to = globals.tickcount() + 16
-                player.last_vel = speed
-                return
+            if not on_ground then
+                return 'air', speed
             end
 
-            player.stage = speed < 5 and 'stand' or 'default'
+            if speed < 5 then
+                return 'stand', speed
+            end
+
+            -- Slowwalk is only treated as its own state when the player is
+            -- actually choking movement packets. Normal walking stays "move".
+            if speed < 95 and player.choked >= 2 and duck < 0.9 then
+                return 'slow', speed
+            end
+
+            return 'move', speed
+        end
+
+        local function sauron_read_delta(enemy)
+            -- 0.5 is the neutral pose. Falling back to it is safer than
+            -- inventing a full -58° side when the pose parameter is absent.
+            local pose = entity.get_prop(enemy, 'm_flPoseParameter', 11)
+            pose = pose == nil and 0.5 or pose
+
+            local raw = utils.clamp((pose * 120) - 60, -SAURON_MAX_DELTA, SAURON_MAX_DELTA)
+            local magnitude = utils.clamp(math.abs(raw), SAURON_MIN_DELTA, SAURON_MAX_DELTA)
+
+            return raw, magnitude
+        end
+
+        local function sauron_add_candidate(candidates, value)
+            value = utils.clamp(math.floor((value or 0) + 0.5), -SAURON_MAX_DELTA, SAURON_MAX_DELTA)
+
+            for i = 1, #candidates do
+                if math.abs(candidates[i] - value) <= 1 then
+                    return
+                end
+            end
+
+            candidates[#candidates + 1] = value
+        end
+
+        local function sauron_build_candidates(enemy, player, stage, raw_delta, magnitude, eye_yaw, lby_yaw)
+            local candidates = { }
+            local lby_delta = sauron_angle_difference(lby_yaw, eye_yaw)
+            local pose_sign = raw_delta < 0 and -1 or 1
+            local primary = pose_sign * magnitude
+            local half = magnitude * 0.55
+            local soft = magnitude * 0.35
+
+            if player.jittering then
+                local side = player.jitter_side ~= 0 and player.jitter_side or pose_sign
+                local jitter = utils.clamp(math.max(player.jitter_delta, half), SAURON_MIN_DELTA, magnitude)
+
+                sauron_add_candidate(candidates, side * jitter)
+                sauron_add_candidate(candidates, -side * jitter)
+                sauron_add_candidate(candidates, side * half)
+                sauron_add_candidate(candidates, -side * half)
+            elseif stage == 'slow' then
+                sauron_add_candidate(candidates, primary)
+                sauron_add_candidate(candidates, -primary)
+                sauron_add_candidate(candidates, pose_sign * half)
+                sauron_add_candidate(candidates, -pose_sign * half)
+            elseif stage == 'move' then
+                -- LBY has more value while moving, but never replaces the
+                -- normal pose-based candidates by itself.
+                if math.abs(lby_delta) >= 12 then
+                    sauron_add_candidate(candidates, lby_delta)
+                end
+
+                sauron_add_candidate(candidates, primary)
+                sauron_add_candidate(candidates, -primary)
+                sauron_add_candidate(candidates, pose_sign * half)
+                sauron_add_candidate(candidates, -pose_sign * half)
+            elseif stage == 'air' then
+                sauron_add_candidate(candidates, primary)
+                sauron_add_candidate(candidates, -primary)
+                sauron_add_candidate(candidates, pose_sign * soft)
+                sauron_add_candidate(candidates, -pose_sign * soft)
+            else
+                if math.abs(lby_delta) >= 18 then
+                    sauron_add_candidate(candidates, lby_delta)
+                end
+
+                sauron_add_candidate(candidates, primary)
+                sauron_add_candidate(candidates, -primary)
+                sauron_add_candidate(candidates, pose_sign * half)
+                sauron_add_candidate(candidates, -pose_sign * half)
+            end
+
+            sauron_add_candidate(candidates, 0)
+
+            return candidates
+        end
+
+        local function sauron_yaw_key(yaw)
+            return tostring(math.floor((yaw or 0) + 0.5))
+        end
+
+        local function sauron_choose_candidate(memory, stage, candidates)
+            local stage_memory = sauron_stage_memory(memory, stage)
+
+            if stage_memory.best_yaw ~= nil then
+                local best_key = sauron_yaw_key(stage_memory.best_yaw)
+
+                if (stage_memory.misses[best_key] or 0) < 2 then
+                    return stage_memory.best_yaw, 'learned'
+                end
+            end
+
+            local count = #candidates
+            if count == 0 then
+                return 0, 'fallback'
+            end
+
+            local fallback, fallback_misses = candidates[1], nil
+
+            for offset = 0, count - 1 do
+                local index = ((stage_memory.cycle + offset) % count) + 1
+                local yaw = candidates[index]
+                local misses = stage_memory.misses[sauron_yaw_key(yaw)] or 0
+
+                if misses < 2 then
+                    return yaw, tostring(index)
+                end
+
+                if fallback_misses == nil or misses < fallback_misses then
+                    fallback = yaw
+                    fallback_misses = misses
+                end
+            end
+
+            return fallback, 'fallback'
         end
 
         local function apply_sauron_resolver(enemy)
+            local player = sauron_state[enemy]
+
             if not sauron_weapon_allowed() or not entity.is_alive(enemy) or entity.is_dormant(enemy) then
+                if player ~= nil then
+                    player.active = false
+                end
+
                 reset_enemy(enemy)
                 return
             end
 
-            local player = sauron_state[enemy]
-            local data = sauron_memory[enemy]
+            local memory = sauron_memory[enemy]
 
-            if player == nil or data == nil then
+            if player == nil or memory == nil then
                 return
             end
 
+            local _, eye_yaw = entity.get_prop(enemy, 'm_angEyeAngles')
+            eye_yaw = sauron_normalize_yaw(eye_yaw or 0)
+
+            local lby_yaw = entity.get_prop(enemy, 'm_flLowerBodyYawTarget')
+            lby_yaw = sauron_normalize_yaw(lby_yaw or eye_yaw)
+
+            sauron_update_network_state(enemy, player, eye_yaw)
+
+            local stage, speed = sauron_get_stage(enemy, player)
+            local raw_delta, magnitude = sauron_read_delta(enemy)
+            local candidates = sauron_build_candidates(
+                enemy,
+                player,
+                stage,
+                raw_delta,
+                magnitude,
+                eye_yaw,
+                lby_yaw
+            )
+            local yaw, source = sauron_choose_candidate(memory, stage, candidates)
+
             player.active = true
-            player.delta = utils.clamp(math.floor(((entity.get_prop(enemy, 'm_flPoseParameter', 11) or 0) * 120 - 60) + 0.5), -60, 60)
-            sauron_update_stage(enemy)
+            player.stage = stage
+            player.delta = raw_delta
+            player.current_yaw = yaw
+            player.source = source
 
-            local stage = player.stage
+            local stage_memory = sauron_stage_memory(memory, stage)
+            memory.side[stage] = yaw
+            memory.resolved[stage] = stage_memory.resolved
+            memory.resolved_side[stage] = stage_memory.resolved_yaw or yaw
 
-            if player.shots == 0 and stage ~= 'slow' then
-                data.side[stage] = data.resolved[stage] and data.resolved_side[stage] or sauron_select_side(player.delta, enemy)
-            end
+            -- Keep generic resolver memory in sync for Cryonova debug/miss
+            -- accounting, while Sauron itself owns the yaw learning table.
+            remember_resolver_yaw(enemy, yaw)
 
-            pcall(plist.set, enemy, 'Force body yaw', true)
-            pcall(plist.set, enemy, 'Force body yaw value', data.side[stage])
+            pcall(plist.set, enemy, 'Force body yaw', math.abs(yaw) > 0.1)
+            pcall(plist.set, enemy, 'Force body yaw value', math.floor(yaw))
             pcall(plist.set, enemy, 'Correction active', true)
 
             local heavy_body_weapon = sauron_heavy_body_weapon()
             set_resolver_targeting_overrides(enemy, heavy_body_weapon)
 
-            state.debug.side_names[enemy] = heavy_body_weapon and ('sauron ' .. stage .. ' safe') or ('sauron ' .. stage)
-            state.debug.deltas[enemy] = data.side[stage]
+            local mode = player.jittering and 'jitter' or stage
+            state.debug.side_names[enemy] = 'sauron ' .. mode .. ' ' .. source
+            state.debug.deltas[enemy] = yaw
+            state.debug.misses[enemy] = 0
+
+            for _, candidate in ipairs(candidates) do
+                local candidate_memory = stage_memory.misses[sauron_yaw_key(candidate)] or 0
+                state.debug.misses[enemy] = state.debug.misses[enemy] + candidate_memory
+            end
         end
 
-        local function sauron_on_aim_hit(e)
+        local function sauron_store_shot(e)
+            if e == nil or e.id == nil then
+                return
+            end
+
             local target = e.target
 
             if target == nil or sauron_state[target] == nil or not sauron_state[target].active then
                 return
             end
 
-            local stage = sauron_state[target].stage
-            sauron_memory[target].resolved[stage] = e.hitgroup == 1
-
-            if sauron_memory[target].resolved[stage] then
-                sauron_memory[target].resolved_side[stage] = sauron_memory[target].side[stage]
-            end
+            local player = sauron_state[target]
+            sauron_shots[e.id] = {
+                target = target,
+                stage = player.stage,
+                yaw = player.current_yaw
+            }
         end
 
-        local function sauron_on_aim_miss(e)
-            local target = e.target
+        local function sauron_take_shot(e)
+            local shot = e.id ~= nil and sauron_shots[e.id] or nil
+            local target = (e.target ~= nil and e.target) or (shot ~= nil and shot.target)
 
-            if target == nil or e.reason ~= '?' or sauron_state[target] == nil or not sauron_state[target].active then
+            if e.id ~= nil then
+                sauron_shots[e.id] = nil
+            end
+
+            if target == nil or sauron_state[target] == nil or sauron_memory[target] == nil then
+                return nil, nil, nil
+            end
+
+            local stage = shot ~= nil and shot.stage or sauron_state[target].stage
+            local yaw = shot ~= nil and shot.yaw or sauron_state[target].current_yaw
+
+            return target, stage, yaw
+        end
+
+        local function sauron_on_aim_fire(e)
+            if e == nil or e.target == nil then
                 return
             end
 
-            local stage = sauron_state[target].stage
-            sauron_state[target].shots = sauron_state[target].shots + 1
-            sauron_memory[target].side[stage] = sauron_select_side(sauron_memory[target].side[stage], target, true)
-            sauron_memory[target].resolved[stage] = false
+            sauron_store_shot(e)
+        end
+
+        local function sauron_on_aim_hit(e)
+            local target, stage, yaw = sauron_take_shot(e)
+
+            if target == nil then
+                return
+            end
+
+            local memory = sauron_memory[target]
+            local stage_memory = sauron_stage_memory(memory, stage)
+            local key = sauron_yaw_key(yaw)
+
+            -- A head hit is stronger evidence, but a body hit is still useful
+            -- feedback and should not make the learned value stale forever.
+            local weight = e.hitgroup == 1 and 2 or 1
+            stage_memory.hits[key] = (stage_memory.hits[key] or 0) + weight
+            stage_memory.misses[key] = math.max((stage_memory.misses[key] or 0) - 1, 0)
+
+            if stage_memory.hits[key] >= stage_memory.best_hits then
+                stage_memory.best_yaw = yaw
+                stage_memory.best_hits = stage_memory.hits[key]
+            end
+
+            stage_memory.resolved = true
+            stage_memory.resolved_yaw = yaw
+            memory.resolved[stage] = true
+            memory.resolved_side[stage] = yaw
+        end
+
+        local function sauron_on_aim_miss(e)
+            local target, stage, yaw = sauron_take_shot(e)
+
+            if target == nil or e.reason ~= '?' then
+                return
+            end
+
+            local memory = sauron_memory[target]
+            local stage_memory = sauron_stage_memory(memory, stage)
+            local key = sauron_yaw_key(yaw)
+
+            stage_memory.misses[key] = (stage_memory.misses[key] or 0) + 1
+            stage_memory.cycle = stage_memory.cycle + 1
+            stage_memory.resolved = false
+            memory.resolved[stage] = false
         end
 
         sauron_reset(true)
 
         client.register_esp_flag('SAURON', 255, 205, 41, function(enemy)
             local player = sauron_state[enemy]
-            local data = sauron_memory[enemy]
+            local memory = sauron_memory[enemy]
 
             return ref.enabled:get()
                 and ref.mode:get() == 'Sauron'
                 and player ~= nil
-                and data ~= nil
+                and memory ~= nil
                 and player.active
-                and not data.resolved[player.stage]
+                and not memory.resolved[player.stage]
         end)
 
         client.register_esp_flag('SAURON OK', 0, 255, 115, function(enemy)
             local player = sauron_state[enemy]
-            local data = sauron_memory[enemy]
+            local memory = sauron_memory[enemy]
 
             return ref.enabled:get()
                 and ref.mode:get() == 'Sauron'
                 and player ~= nil
-                and data ~= nil
+                and memory ~= nil
                 and player.active
-                and data.resolved[player.stage]
+                and memory.resolved[player.stage]
         end)
 
         client.register_esp_flag('SAURON SLOW', 20, 255, 243, function(enemy)
@@ -19797,125 +20907,6 @@ local function on_player_hurt(e)
             end
         end
 
-        local function update_flick_record(enemy)
-            state.flick[enemy] = state.flick[enemy] or create_flick_record()
-
-            local record = state.flick[enemy]
-            local simtime = entity.get_prop(enemy, 'm_flSimulationTime') or 0
-            local miss_cycle = state.flick_misses[enemy] or 0
-
-            if simtime == record.simtime then
-                return record
-            end
-
-            if record.simtime == 0 then
-                record.simtime = simtime
-                record.pitch = entity.get_prop(enemy, 'm_angEyeAngles[0]') or 0
-                record.eye_yaw = entity.get_prop(enemy, 'm_angEyeAngles[1]') or 0
-                record.lby = entity.get_prop(enemy, 'm_flLowerBodyYawTarget') or record.eye_yaw
-                return record
-            end
-
-            record.simtime = simtime
-            record.prev_eye_yaw = record.eye_yaw
-            record.prev_lby = record.lby
-            record.prev_pitch = record.pitch
-
-            record.pitch = entity.get_prop(enemy, 'm_angEyeAngles[0]') or record.pitch
-            record.eye_yaw = entity.get_prop(enemy, 'm_angEyeAngles[1]') or record.eye_yaw
-            record.lby = entity.get_prop(enemy, 'm_flLowerBodyYawTarget') or record.lby
-
-            local eye_delta = normalize_yaw(record.eye_yaw - record.prev_eye_yaw)
-            local lby_delta = normalize_yaw(record.lby - record.prev_lby)
-            local pitch_delta = record.pitch - record.prev_pitch
-            local abs_eye_delta = math.abs(eye_delta)
-            local abs_lby_delta = math.abs(lby_delta)
-            local abs_pitch_delta = math.abs(pitch_delta)
-
-            local is_flicking = (
-                abs_eye_delta > 70 or
-                abs_lby_delta > 45 or
-                abs_pitch_delta > 35
-            )
-
-            if is_flicking then
-                local delta = abs_eye_delta >= abs_lby_delta and eye_delta or lby_delta
-
-                record.side = delta > 0 and -1 or 1
-                record.flick_until = globals.tickcount() + 18
-                record.confidence = math.min(record.confidence + 1, 6)
-            else
-                record.confidence = math.max(record.confidence - 1, 0)
-            end
-
-            if miss_cycle > 0 then
-                record.flick_until = math.max(record.flick_until, globals.tickcount() + 32)
-                record.confidence = math.max(record.confidence, 2)
-            end
-
-            return record
-        end
-
-        local function apply_flick_resolver(enemies)
-            enemies = enemies or entity.get_players(true)
-            if not ref.flick:get() then
-                if state.flick_active and not ref.enabled:get() then
-                    for _, enemy in ipairs(enemies) do
-                        reset_enemy(enemy)
-                    end
-                end
-
-                state.flick_misses = { }
-                state.flick_active = false
-                return
-            end
-
-            state.flick_active = true
-
-            local threat = client.current_threat()
-
-            for _, enemy in ipairs(enemies) do
-                local record = update_flick_record(enemy)
-                local miss_cycle = state.flick_misses[enemy] or 0
-                local active = (
-                    record ~= nil and
-                    (
-                        (record.flick_until > globals.tickcount() and record.confidence > 0) or
-                        miss_cycle > 0 or
-                        threat == enemy
-                    )
-                )
-
-                if active then
-                    local side = record.side
-                    local body_yaw = 58
-
-                    if miss_cycle == 1 then
-                        side = -1
-                        body_yaw = 58
-                    elseif miss_cycle == 2 then
-                        side = 1
-                        body_yaw = 58
-                    elseif miss_cycle == 3 then
-                        side = -1
-                        body_yaw = 35
-                    elseif miss_cycle == 4 then
-                        side = 1
-                        body_yaw = 35
-                    end
-
-                    if side == 0 then
-                        side = 1
-                    end
-
-                    pcall(plist.set, enemy, 'Force body yaw', true)
-                    pcall(plist.set, enemy, 'Force body yaw value', side * body_yaw)
-                elseif not ref.enabled:get() then
-                    reset_enemy(enemy)
-                end
-            end
-        end
-
         local function apply_resolver(enemies)
             enemies = enemies or entity.get_players(true)
             if not ref.enabled:get() then
@@ -19958,67 +20949,6 @@ local function on_player_hurt(e)
             end
         end
 
-        local function apply_defensive_resolver(enemies)
-            enemies = enemies or entity.get_players(true)
-            if not ref.defensive:get() then
-                if state.defensive_active then
-                    for _, enemy in ipairs(enemies) do
-                        pcall(plist.set, enemy, 'force pitch', false)
-                    end
-
-                    state.defensive_active = false
-                end
-
-                return
-            end
-
-            state.defensive_active = true
-
-            for _, enemy in ipairs(enemies) do
-                local data = state.defensive[enemy]
-
-                if data == nil then
-                    data = {
-                        last_sim = 0,
-                        defensive_until = 0,
-                        pitch_vl = 0,
-                        timer = 0
-                    }
-
-                    state.defensive[enemy] = data
-                end
-
-                local sim_time = time_to_ticks(entity.get_prop(enemy, 'm_flSimulationTime'))
-                local sim_delta = sim_time - data.last_sim
-
-                if sim_delta < 0 then
-                    data.defensive_until = globals.tickcount() + math.abs(sim_delta) - time_to_ticks(client.latency())
-                end
-
-                data.last_sim = sim_time
-
-                local pitch = entity.get_prop(enemy, 'm_angEyeAngles[0]') or 0
-
-                if data.defensive_until > globals.tickcount() then
-                    if pitch < 70 then
-                        data.pitch_vl = data.pitch_vl + 1
-                        data.timer = globals.realtime() + 5
-                    end
-                elseif data.timer < globals.realtime() then
-                    data.pitch_vl = 0
-                    data.timer = 0
-                end
-
-                local should_force = data.pitch_vl > 3
-
-                pcall(plist.set, enemy, 'force pitch', should_force)
-
-                if should_force then
-                    pcall(plist.set, enemy, 'force pitch value', 89)
-                end
-            end
-        end
-
         local function run_backtrack(cmd)
             if not ref.backtrack:get() or cmd == nil then
                 return
@@ -20055,6 +20985,12 @@ local function on_player_hurt(e)
             end)
         end
 
+        local function on_aim_fire(e)
+            if ref.enabled:get() and ref.mode:get() == 'Sauron' then
+                sauron_on_aim_fire(e)
+            end
+        end
+
         local function on_aim_hit(e)
             local resolver_mode = ref.mode:get()
 
@@ -20063,10 +20999,6 @@ local function on_player_hurt(e)
             end
 
             local health = e.target ~= nil and entity.get_prop(e.target, 'm_iHealth') or nil
-
-            if ref.flick:get() and e.target ~= nil then
-                state.flick_misses[e.target] = 0
-            end
 
             if ref.enabled:get() and e.target ~= nil then
                 mark_resolver_hit(e.target)
@@ -20078,7 +21010,6 @@ local function on_player_hurt(e)
                 state.misses[e.target] = 0
                 state.bruteforce_cycle[e.target] = 0
                 state.resolver_current_yaw[e.target] = nil
-                state.flick_misses[e.target] = 0
                 state.debug.misses[e.target] = 0
             end
         end
@@ -20090,12 +21021,7 @@ local function on_player_hurt(e)
                 sauron_on_aim_miss(e)
             end
 
-            local can_update_side = (
-                ref.flick:get() or
-                ref.enabled:get()
-            )
-
-            if can_update_side and e.target ~= nil and e.reason == '?' then
+            if ref.enabled:get() and e.target ~= nil and e.reason == '?' then
                 mark_resolver_miss(e.target)
                 state.misses[e.target] = ((state.misses[e.target] or 0) + 1) % 3
                 state.bruteforce_cycle[e.target] = ((state.bruteforce_cycle[e.target] or 0) + 1) % #bruteforce_angles
@@ -20104,24 +21030,12 @@ local function on_player_hurt(e)
             if ref.enabled:get() and e.target ~= nil and e.reason == '?' then
                 state.debug.misses[e.target] = (state.debug.misses[e.target] or 0) + 1
             end
-
-            if ref.flick:get() and e.target ~= nil and e.reason == '?' then
-                state.flick_misses[e.target] = ((state.flick_misses[e.target] or 0) % 4) + 1
-
-                local record = state.flick[e.target]
-                if record ~= nil then
-                    record.flick_until = globals.tickcount() + 48
-                    record.confidence = 6
-                end
-            end
         end
 
         local function on_net_update_end()
             local enemies = entity.get_players(true)
 
             apply_resolver(enemies)
-            apply_flick_resolver(enemies)
-            apply_defensive_resolver(enemies)
         end
 
         local function on_paint()
@@ -20132,11 +21046,15 @@ local function on_player_hurt(e)
             run_backtrack(cmd)
         end
 
+        client.set_event_callback('aim_fire', on_aim_fire)
         client.set_event_callback('aim_hit', on_aim_hit)
         client.set_event_callback('aim_miss', on_aim_miss)
         client.set_event_callback('net_update_end', on_net_update_end)
         client.set_event_callback('paint', on_paint)
         client.set_event_callback('setup_command', on_setup_command)
+        client.set_event_callback('round_start', function()
+            sauron_reset(true)
+        end)
     end
 
     local automatic_purchase do
@@ -21609,11 +22527,19 @@ local antiaim = { } do
 
         local function get_state()
             if not localplayer.is_onground then
+                if localplayer.is_crouched then
+                    return 'Air-Crouch'
+                end
+
                 return 'Air'
             end
 
             if localplayer.is_crouched then
-                return 'Crouched'
+                if localplayer.is_moving then
+                    return 'Move-Crouch'
+                end
+
+                return 'Crouch'
             end
 
             if localplayer.is_moving then
@@ -21628,9 +22554,17 @@ local antiaim = { } do
         end
 
         local function is_disabled()
-            return ref.disablers:get(
-                get_state()
-            )
+            local state = get_state()
+
+            if ref.disablers:get(state) then
+                return true
+            end
+
+            return (
+                state == 'Air-Crouch'
+                or state == 'Crouch'
+                or state == 'Move-Crouch'
+            ) and ref.disablers:get('Crouched')
         end
 
         local function is_enabled()
@@ -26986,6 +27920,7 @@ local render do
         local lethal_warnings do
             local ref = resource.render.user_interface.lethal_warnings
             local grenade_cache = { }
+            local grenade_cache_next_update = { }
             local callbacks_active = false
             local taser_icon = renderer.load_svg('<svg id="svg" version="1.1" width="608" height="689" xmlns="http://www.w3.org/2000/svg"><g id="svgg"><path id="path0" d="M185.803 18.945 C 184.779 19.092,182.028 23.306,174.851 35.722 C 169.580 44.841,157.064 66.513,147.038 83.882 C 109.237 149.365,100.864 163.863,93.085 177.303 C 88.686 184.901,78.772 202.072,71.053 215.461 C 63.333 228.849,53.959 245.069,50.219 251.505 C 46.480 257.941,43.421 263.491,43.421 263.837 C 43.421 264.234,69.566 264.530,114.025 264.635 L 184.628 264.803 181.217 278.618 C 179.342 286.217,174.952 304.128,171.463 318.421 C 167.974 332.714,160.115 364.836,153.999 389.803 C 147.882 414.770,142.934 435.254,143.002 435.324 C 143.127 435.452,148.286 428.934,199.343 364.145 C 215.026 344.243,230.900 324.112,234.619 319.408 C 238.337 314.704,254.449 294.276,270.423 274.013 C 286.397 253.750,303.090 232.582,307.519 226.974 C 340.870 184.745,355.263 166.399,355.263 166.117 C 355.263 165.937,323.554 165.789,284.798 165.789 C 223.368 165.789,214.380 165.667,214.701 164.831 C 215.039 163.949,222.249 151.366,243.554 114.474 C 280.604 50.317,298.192 19.768,298.267 19.444 C 298.355 19.064,188.388 18.576,185.803 18.945" stroke="none" fill="#ffffff" fill-rule="evenodd"></path></g></svg>', 150, 150)
 
@@ -27019,6 +27954,7 @@ local render do
 
             local function clear_cache()
                 grenade_cache = { }
+                grenade_cache_next_update = { }
             end
 
             local function get_weapon_info(weapon)
@@ -27252,30 +28188,48 @@ local render do
 
             local function get_grenade_inventory(player)
                 local inventory = { }
+                local seen = { }
                 local weapons = get_weapons(player)
 
+                -- A player can only carry one of each shown grenade. Keeping
+                -- a unique list also protects the dormant event cache from
+                -- duplicate entries and prevents a very wide/stretched row.
                 for i = 1, #weapons do
                     local weapon_info = get_weapon_info(weapons[i])
                     local console_name = weapon_info ~= nil and weapon_info.console_name or nil
 
-                    if console_name ~= nil and grenade_weapons[console_name] then
+                    if console_name ~= nil and grenade_weapons[console_name] and not seen[console_name] then
+                        seen[console_name] = true
                         inventory[#inventory + 1] = console_name
                     end
                 end
 
+                table.sort(inventory, function(a, b)
+                    return (grenade_order[a] or 0) < (grenade_order[b] or 0)
+                end)
+
                 return inventory
             end
 
-            local function cache_player_grenades(player)
-                if not entity.is_dormant(player) then
-                    grenade_cache[player] = get_grenade_inventory(player)
+            local function cache_player_grenades(player, now)
+                local inventory = grenade_cache[player]
+                local next_update = grenade_cache_next_update[player] or 0
+
+                -- Reading m_hMyWeapons means up to 65 netprop reads per player.
+                -- Refreshing live data five times a second is visually identical
+                -- for ESP but avoids doing that work on every rendered frame.
+                if not entity.is_dormant(player) and (inventory == nil or now >= next_update) then
+                    inventory = get_grenade_inventory(player)
+                    grenade_cache[player] = inventory
+                    grenade_cache_next_update[player] = now + 0.20
                 end
 
-                if grenade_cache[player] == nil then
-                    grenade_cache[player] = { }
+                if inventory == nil then
+                    inventory = { }
+                    grenade_cache[player] = inventory
                 end
 
-                return grenade_cache[player]
+                return inventory
             end
 
             local function should_draw_player(me, player, spectating_enemy)
@@ -27306,18 +28260,21 @@ local render do
 
                 local base_color = color(ref.nade_color:get())
                 local y_offset = ref.nade_offset:get()
+                local now = globals.realtime()
+                local player_resource = entity.get_player_resource()
+                local icon_gap = 2
+
+                if player_resource == nil then
+                    return
+                end
 
                 for player = 1, globals.maxplayers() do
-                    local connected = entity.get_prop(entity.get_player_resource(), 'm_bConnected', player) == 1
+                    local connected = entity.get_prop(player_resource, 'm_bConnected', player) == 1
 
                     if connected and should_draw_player(me, player, spectating_enemy) and entity.is_alive(player) then
-                        local inventory = cache_player_grenades(player)
+                        local inventory = cache_player_grenades(player, now)
 
                         if #inventory > 0 then
-                            table.sort(inventory, function(a, b)
-                                return (grenade_order[a] or 0) < (grenade_order[b] or 0)
-                            end)
-
                             local x1, y1, x2, _, alpha = entity.get_bounding_box(player)
 
                             if x1 ~= nil and alpha ~= 0 then
@@ -27330,13 +28287,13 @@ local render do
                                         total_width = total_width + size[1]
 
                                         if i ~= #inventory then
-                                            total_width = total_width + 4
+                                            total_width = total_width + icon_gap
                                         end
                                     end
                                 end
 
                                 local draw_x = (x1 + x2) * 0.5 - total_width * 0.5
-                                local draw_y = y1 - 16 - y_offset
+                                local draw_y = math.max(2, y1 - 16 - y_offset)
                                 local r, g, b = base_color.r, base_color.g, base_color.b
                                 local a = base_color.a * alpha_multiplier
 
@@ -27352,7 +28309,7 @@ local render do
 
                                     if icon ~= nil and size ~= nil then
                                         icon:draw(round(draw_x), round(draw_y), size[1], size[2], r, g, b, a)
-                                        draw_x = draw_x + size[1] + 4
+                                        draw_x = draw_x + size[1] + icon_gap
                                     end
                                 end
                             end
@@ -27385,6 +28342,7 @@ local render do
                 end
 
                 grenade_cache[player] = next_inventory
+                grenade_cache_next_update[player] = globals.realtime() + 0.20
             end
 
             local function on_item_pickup(e)
@@ -27399,13 +28357,30 @@ local render do
                 end
 
                 grenade_cache[player] = grenade_cache[player] or { }
-                grenade_cache[player][#grenade_cache[player] + 1] = item
+
+                local already_present = false
+                for i = 1, #grenade_cache[player] do
+                    if grenade_cache[player][i] == item then
+                        already_present = true
+                        break
+                    end
+                end
+
+                if not already_present then
+                    grenade_cache[player][#grenade_cache[player] + 1] = item
+                    table.sort(grenade_cache[player], function(a, b)
+                        return (grenade_order[a] or 0) < (grenade_order[b] or 0)
+                    end)
+                end
+
+                grenade_cache_next_update[player] = globals.realtime() + 0.20
             end
 
             local function on_player_reset(e)
                 local player = client.userid_to_entindex(e.userid)
                 if player ~= nil then
                     grenade_cache[player] = { }
+                    grenade_cache_next_update[player] = nil
                 end
             end
 
@@ -27940,7 +28915,12 @@ local render do
             local ref = resource.render.user_interface.grenade_trail
             local standard_grenades_ref = ui.reference('Visuals', 'Other ESP', 'Grenades')
 
+            -- Keep only local-player projectiles. The original implementation
+            -- built and rendered a path for every grenade entity on the server.
             local histories = { }
+            local active_grenades = { }
+            local next_entity_refresh = 0
+
             local classes = {
                 'CBaseCSGrenadeProjectile',
                 'CSmokeGrenadeProjectile',
@@ -27949,10 +28929,22 @@ local render do
                 'CDecoyProjectile'
             }
 
-            local function clear_histories()
-                for k in pairs(histories) do
-                    histories[k] = nil
+            local SAMPLE_INTERVAL = 1 / 32
+            local ENTITY_REFRESH_INTERVAL = 1 / 20
+            local MAX_POINTS = 96
+            local MIN_MOVE_DISTANCE_SQR = 2.25
+            local MAX_GLOW_RINGS = 4
+
+            local function clear_map(map)
+                for key in pairs(map) do
+                    map[key] = nil
                 end
+            end
+
+            local function clear_histories()
+                clear_map(histories)
+                clear_map(active_grenades)
+                next_entity_refresh = 0
             end
 
             local function draw_enhanced_line(x1, y1, x2, y2, r, g, b, a, thickness, glow)
@@ -27960,11 +28952,11 @@ local render do
                     return
                 end
 
-                local final_alpha = a
+                local line_alpha = a
 
-                if thickness == 0 then
-                    final_alpha = a * 0.4
-                    renderer.line(x1, y1, x2, y2, r, g, b, final_alpha)
+                if thickness <= 0 then
+                    line_alpha = a * 0.4
+                    renderer.line(x1, y1, x2, y2, r, g, b, line_alpha)
                 else
                     for i = 0, thickness - 1 do
                         renderer.line(x1 + i, y1, x2 + i, y2, r, g, b, a)
@@ -27975,84 +28967,184 @@ local render do
                     return
                 end
 
-                for i = 1, glow do
-                    local glow_alpha = math.floor(final_alpha * (1 - (i / glow) ^ 0.6) * 0.15)
+                -- A 13–15 step glow means 52–60 extra renderer.line calls for
+                -- every path segment. Four scaled rings preserve the visible
+                -- halo while cutting that work by roughly three quarters.
+                local rings = math.min(glow, MAX_GLOW_RINGS)
+
+                for step = 1, rings do
+                    local radius = math.max(1, math.floor((glow * step / rings) + 0.5))
+                    local falloff = (rings + 1 - step) / (rings + 1)
+                    local glow_alpha = math.floor(line_alpha * falloff * 0.16)
 
                     if glow_alpha > 0 then
-                        renderer.line(x1, y1 - i, x2, y2 - i, r, g, b, glow_alpha)
-                        renderer.line(x1, y1 + i, x2, y2 + i, r, g, b, glow_alpha)
-                        renderer.line(x1 - i, y1, x2 - i, y2, r, g, b, glow_alpha)
-                        renderer.line(x1 + i, y1, x2 + i, y2, r, g, b, glow_alpha)
+                        renderer.line(x1, y1 - radius, x2, y2 - radius, r, g, b, glow_alpha)
+                        renderer.line(x1, y1 + radius, x2, y2 + radius, r, g, b, glow_alpha)
+                        renderer.line(x1 - radius, y1, x2 - radius, y2, r, g, b, glow_alpha)
+                        renderer.line(x1 + radius, y1, x2 + radius, y2, r, g, b, glow_alpha)
                     end
                 end
             end
 
-            local function collect_active_grenades()
-                local active = { }
+            local function is_local_projectile(ent, local_player)
+                local thrower = entity.get_prop(ent, 'm_hThrower')
+                if thrower == local_player then
+                    return true
+                end
+
+                local owner = entity.get_prop(ent, 'm_hOwnerEntity')
+                return owner == local_player
+            end
+
+            local function refresh_active_grenades(local_player, now)
+                if now < next_entity_refresh then
+                    return
+                end
+
+                clear_map(active_grenades)
 
                 for i = 1, #classes do
                     local found = entity.get_all(classes[i])
 
                     if found ~= nil then
                         for j = 1, #found do
-                            active[found[j]] = true
-                        end
-                    end
-                end
+                            local ent = found[j]
 
-                return active
-            end
-
-            local function on_paint()
-                local r, g, b, base_alpha = ref.color:get()
-                local thickness = ref.thickness:get()
-                local glow = ref.glow:get()
-                local max_lifetime = ref.fade:get() / 10
-                local now = globals.curtime()
-                local active = collect_active_grenades()
-
-                for ent, path in pairs(histories) do
-                    if active[ent] then
-                        local x, y, z = entity.get_prop(ent, 'm_vecOrigin')
-
-                        if x ~= nil then
-                            path[#path + 1] = {
-                                x = x,
-                                y = y,
-                                z = z,
-                                time = now
-                            }
-                        end
-                    end
-
-                    if #path > 1 then
-                        for i = #path, 2, -1 do
-                            local p1 = path[i - 1]
-                            local p2 = path[i]
-                            local age = now - p1.time
-                            local time_factor = 1 - (age / max_lifetime)
-
-                            if time_factor > 0 then
-                                local alpha = math.floor(base_alpha * time_factor)
-                                local sx1, sy1 = renderer.world_to_screen(p1.x, p1.y, p1.z)
-                                local sx2, sy2 = renderer.world_to_screen(p2.x, p2.y, p2.z)
-
-                                if sx1 ~= nil and sx2 ~= nil then
-                                    draw_enhanced_line(sx1, sy1, sx2, sy2, r, g, b, alpha, thickness, glow)
-                                end
-                            else
-                                table.remove(path, i - 1)
+                            if is_local_projectile(ent, local_player) then
+                                active_grenades[ent] = true
                             end
                         end
                     end
+                end
 
-                    if not active[ent] and #path <= 1 then
-                        histories[ent] = nil
+                next_entity_refresh = now + ENTITY_REFRESH_INTERVAL
+            end
+
+            local function sample_grenade(ent, now)
+                local history = histories[ent]
+
+                if history == nil then
+                    history = {
+                        points = { },
+                        first = 1,
+                        next_sample = 0
+                    }
+                    histories[ent] = history
+                end
+
+                if now < history.next_sample then
+                    return
+                end
+
+                history.next_sample = now + SAMPLE_INTERVAL
+
+                local x, y, z = entity.get_prop(ent, 'm_vecOrigin')
+                if x == nil then
+                    x, y, z = entity.get_origin(ent)
+                end
+
+                if x == nil then
+                    return
+                end
+
+                local points = history.points
+                local last = points[#points]
+
+                if last ~= nil then
+                    local dx = x - last.x
+                    local dy = y - last.y
+                    local dz = z - last.z
+
+                    -- Do not fill the list while smoke/molotov entities sit
+                    -- still after landing.
+                    if dx * dx + dy * dy + dz * dz < MIN_MOVE_DISTANCE_SQR then
+                        return
                     end
                 end
 
-                for ent in pairs(active) do
-                    histories[ent] = histories[ent] or { }
+                points[#points + 1] = {
+                    x = x,
+                    y = y,
+                    z = z,
+                    time = now
+                }
+
+                if #points - history.first + 1 > MAX_POINTS then
+                    history.first = #points - MAX_POINTS + 1
+                end
+            end
+
+            local function draw_history(ent, history, now, max_lifetime, r, g, b, base_alpha, thickness, glow)
+                local points = history.points
+                local first = history.first or 1
+                local count = #points
+
+                while first < count and now - points[first].time >= max_lifetime do
+                    first = first + 1
+                end
+
+                history.first = first
+
+                if first >= count then
+                    if not active_grenades[ent] and (count == 0 or now - points[count].time >= max_lifetime) then
+                        histories[ent] = nil
+                    end
+                    return
+                end
+
+                -- Project the previous point once, then reuse it as the first
+                -- point of the next segment. This nearly halves screen-space
+                -- projection calls compared with projecting both ends each time.
+                local previous = points[first]
+                local sx1, sy1 = renderer.world_to_screen(previous.x, previous.y, previous.z)
+
+                for index = first + 1, count do
+                    local current = points[index]
+                    local age = now - previous.time
+                    local time_factor = 1 - (age / max_lifetime)
+                    local sx2, sy2 = renderer.world_to_screen(current.x, current.y, current.z)
+
+                    if time_factor > 0 and sx1 ~= nil and sx2 ~= nil then
+                        local alpha = math.floor(base_alpha * time_factor)
+                        draw_enhanced_line(sx1, sy1, sx2, sy2, r, g, b, alpha, thickness, glow)
+                    end
+
+                    previous = current
+                    sx1, sy1 = sx2, sy2
+                end
+            end
+
+            local function on_paint()
+                local local_player = entity.get_local_player()
+                if local_player == nil then
+                    return
+                end
+
+                local r, g, b, base_alpha = ref.color:get()
+                local thickness = ref.thickness:get()
+                local glow = ref.glow:get()
+                local max_lifetime = math.max(ref.fade:get() / 10, 0.1)
+                local now = globals.curtime()
+
+                refresh_active_grenades(local_player, now)
+
+                for ent in pairs(active_grenades) do
+                    sample_grenade(ent, now)
+                end
+
+                for ent, history in pairs(histories) do
+                    draw_history(
+                        ent,
+                        history,
+                        now,
+                        max_lifetime,
+                        r,
+                        g,
+                        b,
+                        base_alpha,
+                        thickness,
+                        glow
+                    )
                 end
             end
 
@@ -31060,6 +32152,22 @@ var_0_150.delete, var_0_150.delete_cancel, var_0_150.delete_confirm = var_0_116(
 end, var_0_99)
 var_0_150.delete_hotkey = ui.new_hotkey("LUA", "B", "Cryonova helper delete hotkey", true)
 
+-- The helper creates its UI after the main config is initialized, so queue and
+-- register it here. Deferred values are applied automatically on first load.
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.enabled", var_0_136)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.hotkey", var_0_137)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.color", var_0_138)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.types", var_0_139)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.aim_mode", var_0_140)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.aim_fov", var_0_141)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.aim_speed", var_0_142)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.show_behind_walls", var_0_143)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.source_state", var_0_113)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.set_hotkey", var_0_150.set_hotkey)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.teleport_hotkey", var_0_150.teleport_hotkey)
+cryonova_queue_config_item("Miscellaneous", "extensions.grenade_helper.delete_hotkey", var_0_150.delete_hotkey)
+config_system.register_pending_items()
+
 local var_0_151 = {}
 local var_0_152 = false
 local var_0_153 = false
@@ -32998,7 +34106,6 @@ local function var_0_196(arg_130_0)
 
 	if var_0_192 then
 		var_0_36:set_raw_float(var_0_192 == 0 and tonumber(var_0_36:get_string()) or var_0_192)
-
 		var_0_192 = nil
 	end
 
@@ -34467,34 +35574,384 @@ end
 -- CRYONOVA GRENADE HELPER V3 END
 
 
+-- ============================================================================
+-- Cryonova embedded module: FixDT
+-- Tickbase limit 15 and weapon-switch handling load automatically.
+-- Recharge delay is fixed to Optimal (0.30 s); no FixDT menu controls are shown.
+-- ============================================================================
+local function cryonova_initialize_fixdt()
+    --[[
+        Cryonova embedded FixDT
+        Combined build:
+          1) Tickbase / rec patch — enabled automatically, fixed value: 15
+          2) DT weapon-switch patch — enabled automatically
+          3) Recharge delay — fixed to Optimal (0.30 s), with no menu control
 
+        This build is tied to the same CS:GO/GameSense addresses as the three
+        source scripts. Do not load rec.lua, DTswitch.lua or recharge.lua together
+        with this file.
+    ]]
 
+    local ffi = require("ffi")
+    local cast = ffi.cast
 
+    -- ============================================================================
+    -- Addresses from the original scripts
+    -- ============================================================================
 
+    local REC_LIMIT = 15
 
+    local REC_PATCH_1_ADDR = 0x433AC21C
+    local REC_PATCH_2_ADDR = 0x433AC245
+    local REC_PATCH_SIZE = 6
 
+    local DTSWITCH_PATCH_ADDR = 0x433AC224
+    local DTSWITCH_RETURN_ADDR = 0x433AC29E
+    local DTSWITCH_CONTINUE_ADDR = 0x433AC22B
+    local DTSWITCH_ORIGINAL_BYTES = {
+        0xC7, 0x43, 0x08, 0xFF, 0xFF, 0x7F, 0x7F
+    }
 
+    local RECHARGE_ADDR = 0x43366F22
+    local RECHARGE_PATCH_SIZE = 10
 
+    local PAGE_EXECUTE_READWRITE = 0x40
+    local MEM_COMMIT_RESERVE = 0x3000
 
+    -- ============================================================================
+    -- Fixed recharge delay: Optimal = 0.30 s.
+    -- Stored as hundredths of a second for the original patch builder.
+    -- ============================================================================
 
+    local FIXED_RECHARGE_DELAY = 30
 
+    -- ============================================================================
+    -- WinAPI resolver used for protected memory writes
+    -- ============================================================================
 
+    local function find_signature(module, pattern, offset)
+        local address = client.find_signature(module, pattern)
 
+        if address ~= nil then
+            return cast("uintptr_t", address) + (offset or 0)
+        end
 
+        return nil
+    end
 
+    local jmp_ecx = find_signature("engine.dll", "\xFF\xE1")
+    local get_proc_sig = find_signature("engine.dll", "\xFF\x15\xCC\xCC\xCC\xCC\xA3\xCC\xCC\xCC\xCC\xEB\x05")
+    local get_module_sig = find_signature("engine.dll", "\xFF\x15\xCC\xCC\xCC\xCC\x85\xC0\x74\x0B")
 
+    if not jmp_ecx or not get_proc_sig or not get_module_sig then
+        client.log("[FixDT] Unable to resolve memory functions for this build.")
+        return
+    end
 
+    local get_proc_addr = cast("uint32_t**", cast("uint32_t", get_proc_sig) + 2)[0][0]
+    local get_module_handle = cast("uint32_t**", cast("uint32_t", get_module_sig) + 2)[0][0]
 
+    local call_get_proc_addr = cast("uint32_t(__fastcall*)(unsigned int, unsigned int, uint32_t, const char*)", jmp_ecx)
+    local call_get_module_handle = cast("uint32_t(__fastcall*)(unsigned int, unsigned int, const char*)", jmp_ecx)
+    local call_virtual_protect = cast("int(__fastcall*)(unsigned int, unsigned int, void*, unsigned long, unsigned long, unsigned long*)", jmp_ecx)
+    local call_virtual_alloc = cast("void*(__fastcall*)(unsigned int, unsigned int, void*, unsigned long, unsigned long, unsigned long)", jmp_ecx)
 
+    local kernel32 = call_get_module_handle(get_module_handle, 0, "kernel32.dll")
+    local virtual_protect = call_get_proc_addr(get_proc_addr, 0, kernel32, "VirtualProtect")
+    local virtual_alloc = call_get_proc_addr(get_proc_addr, 0, kernel32, "VirtualAlloc")
 
+    if not virtual_protect or virtual_protect == 0 or not virtual_alloc or virtual_alloc == 0 then
+        client.log("[FixDT] VirtualProtect / VirtualAlloc are unavailable.")
+        return
+    end
 
+    local old_protect = ffi.new("unsigned long[1]")
 
+    local function make_bytes(values)
+        local result = ffi.new("uint8_t[?]", #values)
 
+        for i = 1, #values do
+            result[i - 1] = values[i]
+        end
 
+        return result
+    end
 
+    local function read_bytes(address, size)
+        local result = ffi.new("uint8_t[?]", size)
+        ffi.copy(result, cast("const void*", address), size)
 
+        return result
+    end
 
+    local function bytes_match(address, data, size)
+        local ptr = cast("uint8_t*", address)
 
+        for i = 0, size - 1 do
+            if ptr[i] ~= data[i] then
+                return false
+            end
+        end
 
+        return true
+    end
 
+    local function write_bytes(address, data, size)
+        local ptr = cast("void*", address)
 
+        if call_virtual_protect(virtual_protect, 0, ptr, size, PAGE_EXECUTE_READWRITE, old_protect) == 0 then
+            return false
+        end
+
+        ffi.copy(ptr, data, size)
+        call_virtual_protect(virtual_protect, 0, ptr, size, old_protect[0], old_protect)
+
+        return true
+    end
+
+    local function put_u32(buffer, offset, value)
+        if value < 0 then
+            value = value + 0x100000000
+        end
+
+        buffer[offset] = value % 0x100
+        value = math.floor(value / 0x100)
+        buffer[offset + 1] = value % 0x100
+        value = math.floor(value / 0x100)
+        buffer[offset + 2] = value % 0x100
+        value = math.floor(value / 0x100)
+        buffer[offset + 3] = value % 0x100
+    end
+
+    local function make_jmp(from_address, to_address, size)
+        local patch = ffi.new("uint8_t[?]", size)
+
+        patch[0] = 0xE9
+        put_u32(patch, 1, to_address - (from_address + 5))
+
+        for i = 5, size - 1 do
+            patch[i] = 0x90
+        end
+
+        return patch
+    end
+
+    -- ============================================================================
+    -- 1) rec.lua replacement: no slider and no undefined "master" reference.
+    -- Fixed to Tickbase limit = 15 and enabled immediately.
+    -- ============================================================================
+
+    local rec_patch_1 = make_bytes({
+        0x3D, REC_LIMIT - 1, 0x00, 0x00, 0x00, 0x90
+    })
+
+    local rec_patch_2 = make_bytes({
+        0x3D, REC_LIMIT, 0x00, 0x00, 0x00, 0x90
+    })
+
+    local rec_original_1 = read_bytes(REC_PATCH_1_ADDR, REC_PATCH_SIZE)
+    local rec_original_2 = read_bytes(REC_PATCH_2_ADDR, REC_PATCH_SIZE)
+    local rec_applied = false
+
+    local function apply_rec_patch()
+        if rec_applied then
+            return true
+        end
+
+        local first_ok = bytes_match(REC_PATCH_1_ADDR, rec_patch_1, REC_PATCH_SIZE)
+            or write_bytes(REC_PATCH_1_ADDR, rec_patch_1, REC_PATCH_SIZE)
+
+        local second_ok = bytes_match(REC_PATCH_2_ADDR, rec_patch_2, REC_PATCH_SIZE)
+            or write_bytes(REC_PATCH_2_ADDR, rec_patch_2, REC_PATCH_SIZE)
+
+        rec_applied = first_ok and second_ok
+
+        return rec_applied
+    end
+
+    local function restore_rec_patch()
+        if not rec_applied then
+            return
+        end
+
+        if bytes_match(REC_PATCH_1_ADDR, rec_patch_1, REC_PATCH_SIZE) then
+            write_bytes(REC_PATCH_1_ADDR, rec_original_1, REC_PATCH_SIZE)
+        end
+
+        if bytes_match(REC_PATCH_2_ADDR, rec_patch_2, REC_PATCH_SIZE) then
+            write_bytes(REC_PATCH_2_ADDR, rec_original_2, REC_PATCH_SIZE)
+        end
+
+        rec_applied = false
+    end
+
+    -- ============================================================================
+    -- 2) DTswitch.lua replacement: automatic, no checkbox.
+    -- Allows a weapon selection command to skip a fake charge command for one tick.
+    -- ============================================================================
+
+    local dtswitch_original = make_bytes(DTSWITCH_ORIGINAL_BYTES)
+    local dtswitch_patch = nil
+    local dtswitch_applied = false
+    local dtswitch_owns_patch = false
+
+    local function make_dtswitch_patch()
+        local cave_size = 40
+        local cave_ptr = call_virtual_alloc(
+            virtual_alloc,
+            0,
+            cast("void*", 0),
+            cave_size,
+            MEM_COMMIT_RESERVE,
+            PAGE_EXECUTE_READWRITE
+        )
+
+        local cave_address = tonumber(cast("uintptr_t", cave_ptr))
+
+        if cave_address == nil or cave_address == 0 then
+            return nil
+        end
+
+        local cave = cast("uint8_t*", cave_ptr)
+
+        -- cmp dword ptr [ebx+38h], 0
+        cave[0] = 0x83
+        cave[1] = 0x7B
+        cave[2] = 0x38
+        cave[3] = 0x00
+
+        -- jz normal_charge
+        cave[4] = 0x74
+        cave[5] = 0x05
+
+        -- weapon switch selected: jump past fake charge
+        cave[6] = 0xE9
+        put_u32(cave, 7, DTSWITCH_RETURN_ADDR - (cave_address + 11))
+
+        -- normal fake-charge instruction
+        cave[11] = 0xC7
+        cave[12] = 0x43
+        cave[13] = 0x08
+        cave[14] = 0xFF
+        cave[15] = 0xFF
+        cave[16] = 0x7F
+        cave[17] = 0x7F
+
+        -- continue original code
+        cave[18] = 0xE9
+        put_u32(cave, 19, DTSWITCH_CONTINUE_ADDR - (cave_address + 23))
+
+        return make_jmp(DTSWITCH_PATCH_ADDR, cave_address, ffi.sizeof(dtswitch_original))
+    end
+
+    dtswitch_patch = make_dtswitch_patch()
+
+    local function apply_dtswitch_patch()
+        if dtswitch_applied or dtswitch_patch == nil then
+            return dtswitch_applied
+        end
+
+        local size = ffi.sizeof(dtswitch_original)
+
+        if bytes_match(DTSWITCH_PATCH_ADDR, dtswitch_patch, size) then
+            dtswitch_applied = true
+            dtswitch_owns_patch = false
+            return true
+        end
+
+        if not bytes_match(DTSWITCH_PATCH_ADDR, dtswitch_original, size) then
+            return false
+        end
+
+        if not write_bytes(DTSWITCH_PATCH_ADDR, dtswitch_patch, size) then
+            return false
+        end
+
+        dtswitch_applied = true
+        dtswitch_owns_patch = true
+        return true
+    end
+
+    local function restore_dtswitch_patch()
+        if not dtswitch_applied then
+            return
+        end
+
+        local size = ffi.sizeof(dtswitch_original)
+
+        if dtswitch_owns_patch and bytes_match(DTSWITCH_PATCH_ADDR, dtswitch_patch, size) then
+            write_bytes(DTSWITCH_PATCH_ADDR, dtswitch_original, size)
+        end
+
+        dtswitch_applied = false
+        dtswitch_owns_patch = false
+    end
+
+    -- ============================================================================
+    -- 3) recharge.lua replacement: fixed to Optimal (0.30 s).
+    -- ============================================================================
+
+    local recharge_original = read_bytes(RECHARGE_ADDR, RECHARGE_PATCH_SIZE)
+    local recharge_last_patch = nil
+
+    local function make_recharge_patch(delay_hundredths)
+        local value = delay_hundredths / 100
+        local float_value = ffi.new("union { float f; uint32_t i; uint8_t b[4]; }")
+        float_value.f = value
+
+        return make_bytes({
+            0xC7, 0x87, 0x24, 0x01, 0x00, 0x00,
+            float_value.b[0], float_value.b[1], float_value.b[2], float_value.b[3]
+        })
+    end
+
+    local function apply_recharge_patch()
+        local patch = make_recharge_patch(FIXED_RECHARGE_DELAY)
+
+        if bytes_match(RECHARGE_ADDR, patch, RECHARGE_PATCH_SIZE) then
+            recharge_last_patch = patch
+            return true
+        end
+
+        if write_bytes(RECHARGE_ADDR, patch, RECHARGE_PATCH_SIZE) then
+            recharge_last_patch = patch
+            return true
+        end
+
+        return false
+    end
+
+    local function restore_recharge_patch()
+        if recharge_last_patch ~= nil
+            and bytes_match(RECHARGE_ADDR, recharge_last_patch, RECHARGE_PATCH_SIZE)
+        then
+            write_bytes(RECHARGE_ADDR, recharge_original, RECHARGE_PATCH_SIZE)
+        end
+
+        recharge_last_patch = nil
+    end
+
+    -- ============================================================================
+    -- Start automatically. Rec and DT switch have no UI controls by design.
+    -- ============================================================================
+
+    apply_rec_patch()
+    apply_dtswitch_patch()
+    apply_recharge_patch()
+
+    -- Retry only DTswitch, because it deliberately refuses to overwrite an
+    -- unexpected instruction sequence and can become available after initialization.
+    client.set_event_callback("paint", function()
+        if not dtswitch_applied then
+            apply_dtswitch_patch()
+        end
+    end)
+
+    client.set_event_callback("shutdown", function()
+        restore_recharge_patch()
+        restore_dtswitch_patch()
+        restore_rec_patch()
+    end)
+end
+
+cryonova_initialize_fixdt()
